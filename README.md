@@ -36,7 +36,7 @@ The handler never logs the bearer key, signing secret, or `Authorization` header
 1. Connect [stealth-bots/grok-bot-slack-events-proxy](https://github.com/stealth-bots/grok-bot-slack-events-proxy) to a Vercel project (Import Git Repository).
 2. Set `CURSOR_WEBHOOK_URL` and `CURSOR_WEBHOOK_KEY` as project environment variables. Optionally set `SLACK_SIGNING_SECRET` later.
 3. Deploy (`main` → Production).
-4. Copy the Vercel URL (for example `https://grok-bot-slack-events-proxy.vercel.app`).
+4. Copy the Vercel URL. Production is currently `https://grok-bot-slack-events-proxy.vercel.app`.
 
 Or from a laptop already logged into Vercel:
 
