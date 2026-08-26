@@ -8,6 +8,18 @@ function envFromProcess(): SlackEnv {
 	};
 }
 
+export function GET(request: Request): Promise<Response> {
+	return handleRequest(request, envFromProcess());
+}
+
+export function POST(request: Request): Promise<Response> {
+	return handleRequest(request, envFromProcess());
+}
+
+export function HEAD(request: Request): Promise<Response> {
+	return handleRequest(request, envFromProcess());
+}
+
 export default {
 	async fetch(request: Request): Promise<Response> {
 		return handleRequest(request, envFromProcess());
