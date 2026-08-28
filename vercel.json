@@ -1,6 +1,8 @@
 {
 	"$schema": "https://openapi.vercel.sh/vercel.json",
 	"rewrites": [
+		{ "source": "/linear", "destination": "/api/linear" },
+		{ "source": "/api/webhooks/linear", "destination": "/api/linear" },
 		{ "source": "/(.*)", "destination": "/api" }
 	]
 }
