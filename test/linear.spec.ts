@@ -64,8 +64,9 @@ describe('GET /linear health', () => {
 
 describe('Linear event forward', () => {
 	const body = JSON.stringify({
-		action: 'create',
+		action: 'created',
 		type: 'AgentSessionEvent',
+		agentSession: { id: 'session-forward' },
 		webhookTimestamp: Date.now(),
 	});
 
@@ -142,8 +143,9 @@ describe('Linear event forward', () => {
 describe('Linear request signing', () => {
 	const now = Date.now();
 	const body = JSON.stringify({
-		action: 'create',
-		type: 'Comment',
+		action: 'created',
+		type: 'AgentSessionEvent',
+		agentSession: { id: 'session-signing' },
 		webhookTimestamp: now,
 	});
 
@@ -214,8 +216,9 @@ describe('Linear request signing', () => {
 		const captured: CapturedFetch[] = [];
 		mockCursorFetch(captured);
 		const retryBody = JSON.stringify({
-			action: 'create',
-			type: 'Comment',
+			action: 'created',
+			type: 'AgentSessionEvent',
+			agentSession: { id: 'session-signing' },
 			webhookTimestamp: now - (6 * 60 - 1) * 60 * 1000,
 		});
 
@@ -229,8 +232,9 @@ describe('Linear request signing', () => {
 		const captured: CapturedFetch[] = [];
 		mockCursorFetch(captured);
 		const retryBody = JSON.stringify({
-			action: 'create',
-			type: 'Comment',
+			action: 'created',
+			type: 'AgentSessionEvent',
+			agentSession: { id: 'session-signing' },
 			webhookTimestamp: now - (6 * 60 + 5) * 60 * 1000,
 		});
 
@@ -253,7 +257,8 @@ describe('Linear request signing', () => {
 		const response = await POST(signedLinearRequest(body));
 
 		expect(response.status).toBe(200);
-		expect(waitUntilMock).toHaveBeenCalledTimes(1);
+		// Two background tasks: the ack, and the forward plus its handoff report.
+		expect(waitUntilMock).toHaveBeenCalledTimes(2);
 		await expectForward(captured);
 	});
 
@@ -261,8 +266,9 @@ describe('Linear request signing', () => {
 		const captured: CapturedFetch[] = [];
 		mockCursorFetch(captured);
 		const secondsBody = JSON.stringify({
-			action: 'create',
-			type: 'Comment',
+			action: 'created',
+			type: 'AgentSessionEvent',
+			agentSession: { id: 'session-signing' },
 			webhookTimestamp: Math.floor(now / 1000),
 		});
 
@@ -275,8 +281,9 @@ describe('Linear request signing', () => {
 	it('rejects a stale Linear timestamp when the signing secret is set', async () => {
 		const fetchMock = mockCursorFetch();
 		const staleBody = JSON.stringify({
-			action: 'create',
-			type: 'Comment',
+			action: 'created',
+			type: 'AgentSessionEvent',
+			agentSession: { id: 'session-signing' },
 			webhookTimestamp: now - 7 * 60 * 60 * 1000,
 		});
 
@@ -292,8 +299,9 @@ describe('Linear request signing', () => {
 	it('prefers the signed webhookTimestamp over an unauthenticated linear-timestamp header', async () => {
 		const fetchMock = mockCursorFetch();
 		const staleBody = JSON.stringify({
-			action: 'create',
-			type: 'Comment',
+			action: 'created',
+			type: 'AgentSessionEvent',
+			agentSession: { id: 'session-signing' },
 			webhookTimestamp: now - 7 * 60 * 60 * 1000,
 		});
 
@@ -421,14 +429,17 @@ describe('Agent session ack', () => {
 		expect(calls.some((call) => call.url.includes('graphql'))).toBe(false);
 	});
 
-	it('does not ack a payload that is not an AgentSessionEvent', async () => {
+	it('neither acks nor forwards a payload that is not an AgentSessionEvent', async () => {
 		const calls = mockRoutedFetch();
 		const commentBody = JSON.stringify({ type: 'Comment', action: 'create', webhookTimestamp: Date.now() });
 
-		await handleLinearRequest(signedLinearRequest(commentBody), agentEnv, (task) => void task);
+		const response = await handleLinearRequest(signedLinearRequest(commentBody), agentEnv, (task) => void task);
 
-		await waitForCall(calls, 'api2.cursor.sh');
-		expect(calls.some((call) => call.url.includes('graphql'))).toBe(false);
+		// One mention fires several Linear events. Forwarding the non-session ones started
+		// runs that could not reply, and Grok Bot's own comments retriggered it.
+		expect(response.status).toBe(200);
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(calls).toHaveLength(0);
 	});
 });
 

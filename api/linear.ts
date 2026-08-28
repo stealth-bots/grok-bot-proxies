@@ -121,7 +121,10 @@ export async function handleLinearRequest(
 
 	const webhookUrl = env.LINEAR_CURSOR_WEBHOOK_URL?.trim();
 	const webhookKey = env.LINEAR_CURSOR_WEBHOOK_KEY?.trim();
-	if (webhookUrl && webhookKey) {
+	// Only agent session events carry a session id, so only they can be answered. Forwarding
+	// the other types started runs with nothing to reply to — three per mention — and made
+	// Grok Bot's own comments trigger fresh runs.
+	if (sessionId && webhookUrl && webhookKey) {
 		// ACK Linear before Cursor returns. Linear times out at 5s and retries;
 		// retries reuse webhookTimestamp and used to 401 against a 60s window.
 		const pending = handOffToCursor(env, sessionId, webhookUrl, webhookKey, rawBody);
@@ -174,17 +177,8 @@ function asUnixMs(value: number): number {
 	return value < 1e12 ? value * 1000 : value;
 }
 
-async function handOffToCursor(
-	env: LinearEnv,
-	sessionId: string | null,
-	webhookUrl: string,
-	webhookKey: string,
-	rawBody: string,
-): Promise<void> {
+async function handOffToCursor(env: LinearEnv, sessionId: string, webhookUrl: string, webhookKey: string, rawBody: string): Promise<void> {
 	const outcome = await forwardToCursor(webhookUrl, webhookKey, rawBody);
-	if (!sessionId) {
-		return;
-	}
 
 	// Put the handoff in the session thread so a reader can see the work left for Grok Bot,
 	// and which run to go look at.
