@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { waitUntil } from '@vercel/functions';
-import { POST, handleLinearRequest, verifyLinearSignature } from '../api/linear';
+import { POST, handleLinearRequest, resetAppTokenCache, verifyLinearSignature } from '../api/linear';
 import { handleSlackRequest } from '../api/slack';
 
 vi.mock('@vercel/functions', () => ({
@@ -36,6 +36,7 @@ type CapturedFetch = {
 afterEach(() => {
 	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
+	resetAppTokenCache();
 });
 
 function signedLinearRequest(body: string, extraHeaders: Record<string, string> = {}): Request {
@@ -296,10 +297,7 @@ describe('Linear request signing', () => {
 			webhookTimestamp: now - 7 * 60 * 60 * 1000,
 		});
 
-		const response = await handleLinearRequest(
-			signedLinearRequest(staleBody, { 'linear-timestamp': String(now) }),
-			linearEnv,
-		);
+		const response = await handleLinearRequest(signedLinearRequest(staleBody, { 'linear-timestamp': String(now) }), linearEnv);
 
 		expect(response.status).toBe(401);
 		expect(fetchMock).not.toHaveBeenCalled();
@@ -333,13 +331,124 @@ describe('Slack path stays on Slack env', () => {
 	});
 });
 
+describe('Agent session ack', () => {
+	const agentEnv = { ...linearEnv, LINEAR_CLIENT_ID: 'client_id_not_real', LINEAR_CLIENT_SECRET: 'client_secret_not_real' };
+	const agentBody = JSON.stringify({
+		type: 'AgentSessionEvent',
+		action: 'created',
+		agentSession: { id: 'session-123' },
+		webhookTimestamp: Date.now(),
+	});
+
+	it('posts a thought activity so Linear does not mark the session unresponsive', async () => {
+		const calls = mockRoutedFetch();
+
+		const response = await handleLinearRequest(signedLinearRequest(agentBody), agentEnv, (task) => void task);
+		expect(response.status).toBe(200);
+
+		const mutation = await waitForCall(calls, 'api.linear.app/graphql');
+		expect(mutation.authorization).toBe('Bearer app_token_not_real');
+		const sent = JSON.parse(mutation.body);
+		expect(sent.query).toContain('agentActivityCreate');
+		expect(sent.variables.input.agentSessionId).toBe('session-123');
+		expect(sent.variables.input.content.type).toBe('thought');
+		expect(typeof sent.variables.input.content.body).toBe('string');
+	});
+
+	it('requests the app actor token with client_credentials and never puts it in the URL', async () => {
+		const calls = mockRoutedFetch();
+
+		await handleLinearRequest(signedLinearRequest(agentBody), agentEnv, (task) => void task);
+
+		const token = await waitForCall(calls, 'oauth/token');
+		expect(new URL(token.url).search).toBe('');
+		expect(token.body).toContain('grant_type=client_credentials');
+		expect(token.body).toContain('app%3Amentionable');
+	});
+
+	it('fetches a fresh token and retries once when Linear rejects the cached one', async () => {
+		let graphqlCalls = 0;
+		const calls = mockRoutedFetch({
+			graphql: () => {
+				graphqlCalls += 1;
+				return graphqlCalls === 1
+					? new Response('unauthorized', { status: 401 })
+					: new Response('{"data":{"agentActivityCreate":{"success":true}}}', { status: 200 });
+			},
+		});
+
+		await handleLinearRequest(signedLinearRequest(agentBody), agentEnv, (task) => void task);
+
+		await vi.waitFor(() => {
+			expect(calls.filter((call) => call.url.includes('graphql'))).toHaveLength(2);
+		});
+		expect(calls.filter((call) => call.url.includes('oauth/token'))).toHaveLength(2);
+	});
+
+	it('skips the ack when the app credentials are unset so the Cursor hop still runs', async () => {
+		const calls = mockRoutedFetch();
+
+		await handleLinearRequest(signedLinearRequest(agentBody), linearEnv, (task) => void task);
+
+		await waitForCall(calls, 'api2.cursor.sh');
+		expect(calls.some((call) => call.url.includes('graphql'))).toBe(false);
+	});
+
+	it('does not ack a payload that is not an AgentSessionEvent', async () => {
+		const calls = mockRoutedFetch();
+		const commentBody = JSON.stringify({ type: 'Comment', action: 'create', webhookTimestamp: Date.now() });
+
+		await handleLinearRequest(signedLinearRequest(commentBody), agentEnv, (task) => void task);
+
+		await waitForCall(calls, 'api2.cursor.sh');
+		expect(calls.some((call) => call.url.includes('graphql'))).toBe(false);
+	});
+});
+
+type RoutedCall = { url: string; body: string; authorization: string | null };
+
+function mockRoutedFetch(overrides: { graphql?: () => Response } = {}): RoutedCall[] {
+	const calls: RoutedCall[] = [];
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const request = new Request(input, init);
+			calls.push({ url: request.url, body: await request.text(), authorization: request.headers.get('authorization') });
+
+			if (request.url.includes('oauth/token')) {
+				return new Response(JSON.stringify({ access_token: 'app_token_not_real', expires_in: 2591999 }), {
+					status: 200,
+					headers: { 'content-type': 'application/json' },
+				});
+			}
+			if (request.url.includes('graphql')) {
+				return overrides.graphql ? overrides.graphql() : new Response('{"data":{"agentActivityCreate":{"success":true}}}', { status: 200 });
+			}
+			return new Response('{"success":true}', { status: 200 });
+		}),
+	);
+	return calls;
+}
+
+async function waitForCall(calls: RoutedCall[], fragment: string): Promise<RoutedCall> {
+	let found: RoutedCall | undefined;
+	await vi.waitFor(() => {
+		found = calls.find((call) => call.url.includes(fragment));
+		expect(found).toBeDefined();
+	});
+	return found as RoutedCall;
+}
+
 async function expectForward(captured: CapturedFetch[]): Promise<void> {
 	await vi.waitFor(() => {
 		expect(captured).toHaveLength(1);
 	});
 }
 
-function mockCursorFetch(captured: CapturedFetch[] = [], reply: { status: number; body: string } = { status: 200, body: '{"success":true}' }) {
+function mockCursorFetch(
+	captured: CapturedFetch[] = [],
+	reply: { status: number; body: string } = { status: 200, body: '{"success":true}' },
+) {
 	const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
 		const request = new Request(input, init);
 		captured.push({

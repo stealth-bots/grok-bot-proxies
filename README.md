@@ -19,6 +19,13 @@ Repo: [stealth-bots/grok-bot-slack-events-proxy](https://github.com/stealth-bots
 
 The Slack Request URL is the production origin plus `/slack` (`/slack` rewrites to `api/slack.ts`). Linear is `/linear`.
 
+On an `AgentSessionEvent`, `/linear` posts a `thought` agent activity back to Linear before
+forwarding to Cursor. Linear marks a session unresponsive if no activity arrives within 10
+seconds, and the Cursor run cannot write into the session itself. The token is minted on
+demand with the `client_credentials` grant (enable it on the Linear app), cached in memory,
+and re-fetched once on a 401 — app actor tokens last 30 days and have no refresh token. With
+`LINEAR_CLIENT_ID` / `LINEAR_CLIENT_SECRET` unset the ack is skipped and the forward still runs.
+
 `/linear/callback` (`api/linear-callback.ts`) is the OAuth redirect target for the Linear app install. Linear requires a
 publicly accessible HTTPS, non-localhost redirect URI, so register
 `https://grok-bot-proxies.alt-x.systems/linear/callback` on the app rather than a localhost URL. The route only reports
@@ -34,6 +41,9 @@ Set these in the Vercel project (Settings → Environment Variables). **Do not c
 | `CURSOR_WEBHOOK_URL` | yes | Destination. Example **shape** only: `https://api2.cursor.sh/automations/webhook/<uuid>` |
 | `CURSOR_WEBHOOK_KEY` | yes (secret) | The `crsr_...` bearer token. Never hardcode. Never put it in the URL. |
 | `SLACK_SIGNING_SECRET` | no (secret) | Slack app signing secret. Add it after Event Subscriptions are working. |
+| `LINEAR_WEBHOOK_SECRET` | yes for `/linear` (secret) | Signing secret of the **installed** Linear app. |
+| `LINEAR_CLIENT_ID` | for the agent ack | Client ID of the same Linear app. |
+| `LINEAR_CLIENT_SECRET` | for the agent ack (secret) | Client secret. Rotating it revokes every app actor token. |
 
 The handler never logs the bearer key, signing secret, or `Authorization` header.
 
