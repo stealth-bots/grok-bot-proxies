@@ -8,7 +8,7 @@ compatibility_date = "2026-08-26"
 #   npx wrangler secret put SLACK_SIGNING_SECRET   # optional
 #   npx wrangler secret put LINEAR_CURSOR_WEBHOOK_URL
 #   npx wrangler secret put LINEAR_CURSOR_WEBHOOK_KEY
-#   npx wrangler secret put LINEAR_WEBHOOK_SECRET   # optional
+#   npx wrangler secret put LINEAR_WEBHOOK_SECRET   # required for POST /linear
 
 [dev]
 ip = "127.0.0.1"

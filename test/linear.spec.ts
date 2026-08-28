@@ -7,10 +7,12 @@ const SLACK_WEBHOOK_URL = 'https://api2.cursor.sh/automations/webhook/11111111-1
 const SLACK_WEBHOOK_KEY = 'crsr_slack_test_key_not_real';
 const LINEAR_WEBHOOK_URL = 'https://api2.cursor.sh/automations/webhook/22222222-2222-2222-2222-222222222222';
 const LINEAR_WEBHOOK_KEY = 'crsr_linear_test_key_not_real';
+const LINEAR_SIGNING_SECRET = 'test_linear_signing_secret_not_real';
 
 const linearEnv = {
 	LINEAR_CURSOR_WEBHOOK_URL: LINEAR_WEBHOOK_URL,
 	LINEAR_CURSOR_WEBHOOK_KEY: LINEAR_WEBHOOK_KEY,
+	LINEAR_WEBHOOK_SECRET: LINEAR_SIGNING_SECRET,
 };
 
 const slackEnv = {
@@ -30,6 +32,18 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
 });
+
+function signedLinearRequest(body: string, extraHeaders: Record<string, string> = {}): Request {
+	return new Request('https://proxy.example/linear', {
+		method: 'POST',
+		headers: {
+			'content-type': 'application/json',
+			'linear-signature': nodeLinearSignature(LINEAR_SIGNING_SECRET, body),
+			...extraHeaders,
+		},
+		body,
+	});
+}
 
 describe('GET /linear health', () => {
 	it('returns a short health string and no secrets', async () => {
@@ -53,14 +67,7 @@ describe('Linear event forward', () => {
 		const captured: CapturedFetch[] = [];
 		mockCursorFetch(captured);
 
-		const response = await handleLinearRequest(
-			new Request('https://proxy.example/linear', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body,
-			}),
-			linearEnv,
-		);
+		const response = await handleLinearRequest(signedLinearRequest(body), linearEnv);
 
 		expect(response.status).toBe(200);
 		expect(await response.text()).toBe('ok');
@@ -78,14 +85,7 @@ describe('Linear event forward', () => {
 	it('still returns 200 when Cursor fails so Linear does not retry-storm', async () => {
 		mockCursorFetch([], { status: 500, body: 'nope' });
 
-		const response = await handleLinearRequest(
-			new Request('https://proxy.example/linear', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body,
-			}),
-			linearEnv,
-		);
+		const response = await handleLinearRequest(signedLinearRequest(body), linearEnv);
 
 		expect(response.status).toBe(200);
 		expect(await response.text()).toBe('ok');
@@ -94,14 +94,9 @@ describe('Linear event forward', () => {
 	it('still returns 200 with no dest env so the Linear app can be created first', async () => {
 		const fetchMock = mockCursorFetch();
 
-		const response = await handleLinearRequest(
-			new Request('https://proxy.example/linear', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body,
-			}),
-			{},
-		);
+		const response = await handleLinearRequest(signedLinearRequest(body), {
+			LINEAR_WEBHOOK_SECRET: LINEAR_SIGNING_SECRET,
+		});
 
 		expect(response.status).toBe(200);
 		expect(fetchMock).not.toHaveBeenCalled();
@@ -109,7 +104,6 @@ describe('Linear event forward', () => {
 });
 
 describe('Linear request signing', () => {
-	const signingSecret = 'test_linear_signing_secret_not_real';
 	const now = Date.now();
 	const body = JSON.stringify({
 		action: 'create',
@@ -117,9 +111,8 @@ describe('Linear request signing', () => {
 		webhookTimestamp: now,
 	});
 
-	it('forwards when LINEAR_WEBHOOK_SECRET is unset', async () => {
-		const captured: CapturedFetch[] = [];
-		mockCursorFetch(captured);
+	it('rejects when LINEAR_WEBHOOK_SECRET is unset so the Cursor key cannot be invoked unsigned', async () => {
+		const fetchMock = mockCursorFetch();
 
 		const response = await handleLinearRequest(
 			new Request('https://proxy.example/linear', {
@@ -127,11 +120,14 @@ describe('Linear request signing', () => {
 				headers: { 'content-type': 'application/json' },
 				body,
 			}),
-			linearEnv,
+			{
+				LINEAR_CURSOR_WEBHOOK_URL: LINEAR_WEBHOOK_URL,
+				LINEAR_CURSOR_WEBHOOK_KEY: LINEAR_WEBHOOK_KEY,
+			},
 		);
 
-		expect(response.status).toBe(200);
-		expect(captured).toHaveLength(1);
+		expect(response.status).toBe(503);
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
 	it('rejects a bad signature before forwarding when the signing secret is set', async () => {
@@ -147,7 +143,7 @@ describe('Linear request signing', () => {
 				},
 				body,
 			}),
-			{ ...linearEnv, LINEAR_WEBHOOK_SECRET: signingSecret },
+			linearEnv,
 		);
 
 		expect(response.status).toBe(401);
@@ -157,27 +153,19 @@ describe('Linear request signing', () => {
 	it('accepts a valid Linear signature computed independently and forwards', async () => {
 		const captured: CapturedFetch[] = [];
 		mockCursorFetch(captured);
-		const signature = nodeLinearSignature(signingSecret, body);
+		const signature = nodeLinearSignature(LINEAR_SIGNING_SECRET, body);
 
 		expect(
 			await verifyLinearSignature({
-				signingSecret,
+				signingSecret: LINEAR_SIGNING_SECRET,
 				signature,
 				rawBody: body,
 			}),
 		).toBe(true);
 
 		const response = await handleLinearRequest(
-			new Request('https://proxy.example/linear', {
-				method: 'POST',
-				headers: {
-					'content-type': 'application/json',
-					'linear-signature': signature,
-					'linear-timestamp': String(now),
-				},
-				body,
-			}),
-			{ ...linearEnv, LINEAR_WEBHOOK_SECRET: signingSecret },
+			signedLinearRequest(body, { 'linear-timestamp': String(now) }),
+			linearEnv,
 		);
 
 		expect(response.status).toBe(200);
@@ -192,19 +180,27 @@ describe('Linear request signing', () => {
 			type: 'Comment',
 			webhookTimestamp: now - 5 * 60 * 1000,
 		});
-		const signature = nodeLinearSignature(signingSecret, staleBody);
 
 		const response = await handleLinearRequest(
-			new Request('https://proxy.example/linear', {
-				method: 'POST',
-				headers: {
-					'content-type': 'application/json',
-					'linear-signature': signature,
-					'linear-timestamp': String(now - 5 * 60 * 1000),
-				},
-				body: staleBody,
-			}),
-			{ ...linearEnv, LINEAR_WEBHOOK_SECRET: signingSecret },
+			signedLinearRequest(staleBody, { 'linear-timestamp': String(now - 5 * 60 * 1000) }),
+			linearEnv,
+		);
+
+		expect(response.status).toBe(401);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it('prefers the signed webhookTimestamp over an unauthenticated linear-timestamp header', async () => {
+		const fetchMock = mockCursorFetch();
+		const staleBody = JSON.stringify({
+			action: 'create',
+			type: 'Comment',
+			webhookTimestamp: now - 5 * 60 * 1000,
+		});
+
+		const response = await handleLinearRequest(
+			signedLinearRequest(staleBody, { 'linear-timestamp': String(now) }),
+			linearEnv,
 		);
 
 		expect(response.status).toBe(401);

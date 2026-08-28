@@ -53,20 +53,22 @@ export async function handleLinearRequest(request: Request, env: LinearEnv): Pro
 	const rawBody = await request.text();
 
 	const signingSecret = env.LINEAR_WEBHOOK_SECRET?.trim();
-	if (signingSecret) {
-		const verified = await verifyLinearSignature({
-			signingSecret,
-			signature: request.headers.get('linear-signature'),
-			rawBody,
-		});
-		if (!verified) {
-			return new Response('Unauthorized', { status: 401 });
-		}
+	if (!signingSecret) {
+		return new Response('LINEAR_WEBHOOK_SECRET is not configured', { status: 503 });
+	}
 
-		const timestampMs = linearTimestampMs(request, rawBody);
-		if (timestampMs !== null && Math.abs(Date.now() - timestampMs) > LINEAR_MAX_SKEW_MS) {
-			return new Response('Unauthorized', { status: 401 });
-		}
+	const verified = await verifyLinearSignature({
+		signingSecret,
+		signature: request.headers.get('linear-signature'),
+		rawBody,
+	});
+	if (!verified) {
+		return new Response('Unauthorized', { status: 401 });
+	}
+
+	const timestampMs = linearTimestampMs(rawBody, request);
+	if (timestampMs !== null && Math.abs(Date.now() - timestampMs) > LINEAR_MAX_SKEW_MS) {
+		return new Response('Unauthorized', { status: 401 });
 	}
 
 	const webhookUrl = env.LINEAR_CURSOR_WEBHOOK_URL?.trim();
@@ -110,15 +112,7 @@ export async function verifyLinearSignature(input: {
 	return timingSafeEqual(toHex(mac), signature.toLowerCase());
 }
 
-function linearTimestampMs(request: Request, rawBody: string): number | null {
-	const header = request.headers.get('linear-timestamp');
-	if (header) {
-		const parsed = Number(header);
-		if (Number.isFinite(parsed)) {
-			return parsed;
-		}
-	}
-
+function linearTimestampMs(rawBody: string, request: Request): number | null {
 	try {
 		const payload: unknown = rawBody ? JSON.parse(rawBody) : null;
 		if (isRecord(payload) && typeof payload.webhookTimestamp === 'number') {
@@ -126,6 +120,14 @@ function linearTimestampMs(request: Request, rawBody: string): number | null {
 		}
 	} catch {
 		// Ignore unreadable JSON after a valid signature.
+	}
+
+	const header = request.headers.get('linear-timestamp');
+	if (header) {
+		const parsed = Number(header);
+		if (Number.isFinite(parsed)) {
+			return parsed;
+		}
 	}
 
 	return null;
