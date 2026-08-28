@@ -158,13 +158,17 @@ start a run.
 
 Two skills in `skills/`, for the Cursor run rather than for this repo:
 
-| Skill                   | Use                                                                         |
-| ----------------------- | --------------------------------------------------------------------------- |
-| `linear-agent-activity` | Session output — progress, questions, the final answer, closing the session |
-| `linear-agent-comment`  | An ordinary issue comment that does not touch session state                 |
+| Skill                | Use                                                           |
+| -------------------- | ------------------------------------------------------------- |
+| `linear-agent-reply` | Reply into Linear — session activities or an ordinary comment |
+| `slack-agent-reply`  | Reply to a Slack mention or DM                                |
 
-They are split because the choice between them is the thing a run gets wrong: only an
-activity closes a session, so a comment-only reply leaves a spinner running next to it.
+They differ in an important way. The Linear skill writes **through this proxy**, which holds
+the Linear credentials, so the run needs none. Slack has no outbound route here, so that skill
+calls Slack's Web API directly and the run needs its own `SLACK_BOT_TOKEN`.
+
+That also means the Slack loop guard lives in the run: Slack delivers the bot's own messages
+back as events, and nothing here filters them. The Linear equivalent is handled in the proxy.
 
 ## Slack setup
 
