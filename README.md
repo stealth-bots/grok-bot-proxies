@@ -19,6 +19,12 @@ Repo: [stealth-bots/grok-bot-slack-events-proxy](https://github.com/stealth-bots
 
 The Slack Request URL is the production origin plus `/slack` (`/slack` rewrites to `api/slack.ts`). Linear is `/linear`.
 
+`/linear/callback` (`api/linear-callback.ts`) is the OAuth redirect target for the Linear app install. Linear requires a
+publicly accessible HTTPS, non-localhost redirect URI, so register
+`https://grok-bot-proxies.alt-x.systems/linear/callback` on the app rather than a localhost URL. The route only reports
+whether the install completed — it holds no secrets and exchanges nothing. The app actor token used to post agent
+activities comes from the `client_credentials` grant, which does not use the returned `code`.
+
 ## Environment
 
 Set these in the Vercel project (Settings → Environment Variables). **Do not commit them.**
