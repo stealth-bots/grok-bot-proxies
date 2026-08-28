@@ -10,9 +10,9 @@ function isLinearPath(request: Request): boolean {
 }
 
 export default {
-	async fetch(request: Request, env: Env): Promise<Response> {
+	async fetch(request: Request, env: Env, ctx?: { waitUntil(task: Promise<unknown>): void }): Promise<Response> {
 		if (isLinearPath(request)) {
-			return handleLinearRequest(request, env);
+			return handleLinearRequest(request, env, ctx ? (task) => ctx.waitUntil(task) : undefined);
 		}
 		return handleRequest(request, env);
 	},

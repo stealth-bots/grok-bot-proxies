@@ -1,4 +1,6 @@
-const LINEAR_MAX_SKEW_MS = 60 * 1000;
+// Linear retries failed deliveries after 1 minute, 1 hour, then 6 hours,
+// reusing the original signed webhookTimestamp. A 60s window 401s those retries.
+const LINEAR_MAX_SKEW_MS = 6 * 60 * 60 * 1000;
 const TEXT_PLAIN = 'text/plain; charset=utf-8';
 
 export interface LinearEnv {
@@ -33,7 +35,11 @@ export default {
 	},
 };
 
-export async function handleLinearRequest(request: Request, env: LinearEnv): Promise<Response> {
+export async function handleLinearRequest(
+	request: Request,
+	env: LinearEnv,
+	waitUntil?: (task: Promise<unknown>) => void,
+): Promise<Response> {
 	const method = request.method.toUpperCase();
 
 	if (method === 'GET' || method === 'HEAD') {
@@ -74,17 +80,11 @@ export async function handleLinearRequest(request: Request, env: LinearEnv): Pro
 	const webhookUrl = env.LINEAR_CURSOR_WEBHOOK_URL?.trim();
 	const webhookKey = env.LINEAR_CURSOR_WEBHOOK_KEY?.trim();
 	if (webhookUrl && webhookKey) {
-		try {
-			await fetch(webhookUrl, {
-				method: 'POST',
-				headers: {
-					Authorization: `Bearer ${webhookKey}`,
-					'Content-Type': 'application/json',
-				},
-				body: rawBody,
-			});
-		} catch {
-			// Always 200 to Linear after accept. Linear retries non-200.
+		// ACK Linear before Cursor returns. Linear times out at 5s and retries;
+		// retries reuse webhookTimestamp and used to 401 against a 60s window.
+		const pending = forwardToCursor(webhookUrl, webhookKey, rawBody);
+		if (waitUntil) {
+			waitUntil(pending);
 		}
 	}
 
@@ -109,14 +109,14 @@ export async function verifyLinearSignature(input: {
 		'sign',
 	]);
 	const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(rawBody));
-	return timingSafeEqual(toHex(mac), signature.toLowerCase());
+	return timingSafeEqual(toHex(mac), signature.trim().toLowerCase());
 }
 
 function linearTimestampMs(rawBody: string, request: Request): number | null {
 	try {
 		const payload: unknown = rawBody ? JSON.parse(rawBody) : null;
 		if (isRecord(payload) && typeof payload.webhookTimestamp === 'number') {
-			return payload.webhookTimestamp;
+			return asUnixMs(payload.webhookTimestamp);
 		}
 	} catch {
 		// Ignore unreadable JSON after a valid signature.
@@ -126,11 +126,31 @@ function linearTimestampMs(rawBody: string, request: Request): number | null {
 	if (header) {
 		const parsed = Number(header);
 		if (Number.isFinite(parsed)) {
-			return parsed;
+			return asUnixMs(parsed);
 		}
 	}
 
 	return null;
+}
+
+function asUnixMs(value: number): number {
+	// Linear documents milliseconds. Seconds are still ~1e9 in this century.
+	return value < 1e12 ? value * 1000 : value;
+}
+
+async function forwardToCursor(webhookUrl: string, webhookKey: string, rawBody: string): Promise<void> {
+	try {
+		await fetch(webhookUrl, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${webhookKey}`,
+				'Content-Type': 'application/json',
+			},
+			body: rawBody,
+		});
+	} catch {
+		// Linear already received 200. Do not surface Cursor failures.
+	}
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
