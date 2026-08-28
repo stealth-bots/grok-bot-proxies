@@ -9,6 +9,7 @@ const LINEAR_TOKEN_URL = 'https://api.linear.app/oauth/token';
 const APP_TOKEN_SCOPES = 'read,write,app:assignable,app:mentionable';
 const TOKEN_EXPIRY_MARGIN_MS = 60 * 1000;
 const MAX_LOGGED_REPLY = 500;
+const MAX_LOGGED_BODY = 4000;
 
 // `prompt` is deliberately absent: that type is user-generated and an agent cannot emit it.
 const BODY_TYPES = new Set(['thought', 'elicitation', 'response', 'error']);
@@ -24,6 +25,7 @@ export interface LinearActivityEnv {
 	LINEAR_CLIENT_ID?: string;
 	LINEAR_CLIENT_SECRET?: string;
 	LINEAR_ACTIVITY_SECRET?: string;
+	LOG_PAYLOADS?: string;
 }
 
 function envFromProcess(): LinearActivityEnv {
@@ -31,6 +33,7 @@ function envFromProcess(): LinearActivityEnv {
 		LINEAR_CLIENT_ID: process.env.LINEAR_CLIENT_ID,
 		LINEAR_CLIENT_SECRET: process.env.LINEAR_CLIENT_SECRET,
 		LINEAR_ACTIVITY_SECRET: process.env.LINEAR_ACTIVITY_SECRET,
+		LOG_PAYLOADS: process.env.LOG_PAYLOADS,
 	};
 }
 
@@ -69,16 +72,25 @@ export async function handleLinearActivityRequest(request: Request, env: LinearA
 	const callerSecret = env.LINEAR_ACTIVITY_SECRET?.trim();
 	if (!callerSecret) {
 		// Fail closed: without a shared secret this route would let anyone write into the workspace.
+		console.log('activity rejected: 503 LINEAR_ACTIVITY_SECRET is not configured');
 		return new Response('LINEAR_ACTIVITY_SECRET is not configured', { status: 503 });
 	}
 	if (!bearerMatches(request.headers.get('authorization'), callerSecret)) {
+		// Logged so a Grok Bot run misconfigured with the wrong bearer is not silent.
+		console.log('activity rejected: 401 bad or missing bearer');
 		return new Response('Unauthorized', { status: 401 });
 	}
 
-	const content = contentFrom(await request.text());
+	const rawBody = await request.text();
+	logPayload(env, 'activity request body', rawBody);
+
+	const content = contentFrom(rawBody);
 	if ('error' in content) {
+		console.log(`activity rejected: 400 ${content.error}`);
 		return json({ ok: false, error: content.error }, 400);
 	}
+
+	console.log(`activity request: session=${content.agentSessionId} type=${content.content.type}`);
 
 	let token = await appActorToken(env);
 	if (!token) {
@@ -96,7 +108,9 @@ export async function handleLinearActivityRequest(request: Request, env: LinearA
 	}
 
 	const reply = await response.text();
-	console.log(`agent activity (${content.content.type}): status=${response.status} reply=${reply.slice(0, MAX_LOGGED_REPLY)}`);
+	console.log(
+		`agent activity: session=${content.agentSessionId} type=${content.content.type} status=${response.status} reply=${reply.slice(0, MAX_LOGGED_REPLY)}`,
+	);
 
 	// Linear answers 200 with an `errors` array on a rejected shape, so status alone is not success.
 	const succeeded = response.ok && reply.includes('"success":true');
@@ -224,6 +238,14 @@ function safeJson(text: string): unknown {
 	} catch {
 		return text.slice(0, MAX_LOGGED_REPLY);
 	}
+}
+
+function logPayload(env: LinearActivityEnv, label: string, body: string): void {
+	const flag = env.LOG_PAYLOADS?.trim().toLowerCase();
+	if (flag === '0' || flag === 'false' || flag === 'off') {
+		return;
+	}
+	console.log(`${label}: ${body.slice(0, MAX_LOGGED_BODY)}`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

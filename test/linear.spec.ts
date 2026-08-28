@@ -379,10 +379,37 @@ describe('Agent session ack', () => {
 
 		await handleLinearRequest(signedLinearRequest(agentBody), agentEnv, (task) => void task);
 
+		// Two thought posts: the rejected one and the retry on a freshly minted token.
 		await vi.waitFor(() => {
-			expect(calls.filter((call) => call.url.includes('graphql'))).toHaveLength(2);
+			expect(calls.filter((call) => call.url.includes('graphql') && call.body.includes('"thought"'))).toHaveLength(2);
 		});
 		expect(calls.filter((call) => call.url.includes('oauth/token'))).toHaveLength(2);
+	});
+
+	it('reports the Cursor handoff into the session with the run id', async () => {
+		const calls = mockRoutedFetch();
+
+		await handleLinearRequest(signedLinearRequest(agentBody), agentEnv, (task) => void task);
+
+		await vi.waitFor(() => {
+			const handoff = calls.find((call) => call.url.includes('graphql') && call.body.includes('"action"'));
+			expect(handoff).toBeDefined();
+			const sent = JSON.parse((handoff as { body: string }).body);
+			expect(sent.variables.input.content.action).toBe('Sent to Grok Bot');
+			expect(sent.variables.input.content.parameter).toBe('run-abc');
+		});
+	});
+
+	it('closes the session with an error when Cursor refuses, rather than leaving it spinning', async () => {
+		const calls = mockRoutedFetch({ cursor: () => new Response('nope', { status: 500 }) });
+
+		await handleLinearRequest(signedLinearRequest(agentBody), agentEnv, (task) => void task);
+
+		await vi.waitFor(() => {
+			const failure = calls.find((call) => call.url.includes('graphql') && call.body.includes('"error"'));
+			expect(failure).toBeDefined();
+			expect(JSON.parse((failure as { body: string }).body).variables.input.content.type).toBe('error');
+		});
 	});
 
 	it('skips the ack when the app credentials are unset so the Cursor hop still runs', async () => {
@@ -407,7 +434,7 @@ describe('Agent session ack', () => {
 
 type RoutedCall = { url: string; body: string; authorization: string | null };
 
-function mockRoutedFetch(overrides: { graphql?: () => Response } = {}): RoutedCall[] {
+function mockRoutedFetch(overrides: { graphql?: () => Response; cursor?: () => Response } = {}): RoutedCall[] {
 	const calls: RoutedCall[] = [];
 	vi.stubGlobal(
 		'fetch',
@@ -424,7 +451,7 @@ function mockRoutedFetch(overrides: { graphql?: () => Response } = {}): RoutedCa
 			if (request.url.includes('graphql')) {
 				return overrides.graphql ? overrides.graphql() : new Response('{"data":{"agentActivityCreate":{"success":true}}}', { status: 200 });
 			}
-			return new Response('{"success":true}', { status: 200 });
+			return overrides.cursor ? overrides.cursor() : new Response('{"success":true,"runUuid":"run-abc"}', { status: 200 });
 		}),
 	);
 	return calls;

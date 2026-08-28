@@ -97,9 +97,14 @@ grant type"` means step 1's toggle is off.
 
 ## Grok Bot: replying into a session
 
-`POST /linear` acks every `AgentSessionEvent` with a `thought` within Linear's 10 second
-deadline, then hands off to Cursor. **The ack does not close the session** — the Grok Bot run
-has to send the final activity itself.
+`POST /linear` writes two activities into the session by itself: a `thought` ack inside
+Linear's 10 second deadline, then — once Cursor answers — an `action` naming the run
+(`Sent to Grok Bot` / the `runUuid`), so the handoff is visible in the thread. If Cursor
+refuses the handoff it posts an `error` instead, which **closes** the session; better a
+visibly failed session than one spinning on a run that never started.
+
+**Neither of those closes a successful session** — the Grok Bot run has to send the final
+activity itself.
 
 Give the Cursor run these instructions:
 

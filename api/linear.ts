@@ -8,6 +8,8 @@ const TEXT_PLAIN = 'text/plain; charset=utf-8';
 // Cursor's reply is the only signal that a run actually started. Cap it so a long
 // error page cannot flood the function log.
 const MAX_LOGGED_CURSOR_REPLY = 500;
+// Full payloads while we watch this settle. Set LOG_PAYLOADS=0 to drop back to metadata.
+const MAX_LOGGED_BODY = 4000;
 const LINEAR_GRAPHQL_URL = 'https://api.linear.app/graphql';
 const LINEAR_TOKEN_URL = 'https://api.linear.app/oauth/token';
 // Changing this scope string revokes every existing app actor token for the app.
@@ -30,6 +32,7 @@ export interface LinearEnv {
 	LINEAR_WEBHOOK_SECRET?: string;
 	LINEAR_CLIENT_ID?: string;
 	LINEAR_CLIENT_SECRET?: string;
+	LOG_PAYLOADS?: string;
 }
 
 function envFromProcess(): LinearEnv {
@@ -39,6 +42,7 @@ function envFromProcess(): LinearEnv {
 		LINEAR_WEBHOOK_SECRET: process.env.LINEAR_WEBHOOK_SECRET,
 		LINEAR_CLIENT_ID: process.env.LINEAR_CLIENT_ID,
 		LINEAR_CLIENT_SECRET: process.env.LINEAR_CLIENT_SECRET,
+		LOG_PAYLOADS: process.env.LOG_PAYLOADS,
 	};
 }
 
@@ -102,6 +106,10 @@ export async function handleLinearRequest(
 		return new Response('Unauthorized', { status: 401 });
 	}
 
+	console.log(`linear webhook: ${describeLinearEvent(rawBody)} bytes=${rawBody.length}`);
+	// The body forwarded to Cursor is this same body, so it is only logged once.
+	logPayload(env, 'linear webhook body', rawBody);
+
 	// Ack first: the 10s activity deadline is tighter than anything Cursor needs.
 	const sessionId = agentSessionIdFrom(rawBody);
 	if (sessionId) {
@@ -116,7 +124,7 @@ export async function handleLinearRequest(
 	if (webhookUrl && webhookKey) {
 		// ACK Linear before Cursor returns. Linear times out at 5s and retries;
 		// retries reuse webhookTimestamp and used to 401 against a 60s window.
-		const pending = forwardToCursor(webhookUrl, webhookKey, rawBody);
+		const pending = handOffToCursor(env, sessionId, webhookUrl, webhookKey, rawBody);
 		if (onBackground) {
 			onBackground(pending);
 		}
@@ -166,7 +174,41 @@ function asUnixMs(value: number): number {
 	return value < 1e12 ? value * 1000 : value;
 }
 
-async function forwardToCursor(webhookUrl: string, webhookKey: string, rawBody: string): Promise<void> {
+async function handOffToCursor(
+	env: LinearEnv,
+	sessionId: string | null,
+	webhookUrl: string,
+	webhookKey: string,
+	rawBody: string,
+): Promise<void> {
+	const outcome = await forwardToCursor(webhookUrl, webhookKey, rawBody);
+	if (!sessionId) {
+		return;
+	}
+
+	// Put the handoff in the session thread so a reader can see the work left for Grok Bot,
+	// and which run to go look at.
+	if (outcome.ok) {
+		await emitActivity(env, sessionId, {
+			type: 'action',
+			action: 'Sent to Grok Bot',
+			parameter: outcome.runUuid ?? 'run',
+			result: 'Accepted. Grok Bot is working on it and will reply here.',
+		});
+		return;
+	}
+
+	// An `error` closes the session. Better a session that visibly failed than one that
+	// spins forever waiting on a run that was never started.
+	await emitActivity(env, sessionId, {
+		type: 'error',
+		body: `Could not hand this to Grok Bot (${outcome.detail}). Nothing is running — please retry.`,
+	});
+}
+
+type CursorOutcome = { ok: boolean; runUuid?: string; detail: string };
+
+async function forwardToCursor(webhookUrl: string, webhookKey: string, rawBody: string): Promise<CursorOutcome> {
 	try {
 		const response = await fetch(webhookUrl, {
 			method: 'POST',
@@ -179,17 +221,53 @@ async function forwardToCursor(webhookUrl: string, webhookKey: string, rawBody: 
 
 		const reply = (await response.text()).slice(0, MAX_LOGGED_CURSOR_REPLY);
 		console.log(`cursor forward: status=${response.status} reply=${redactUrl(reply, webhookUrl)}`);
+		return { ok: response.ok, runUuid: runUuidFrom(reply), detail: `status ${response.status}` };
 	} catch (error) {
 		// Linear already received 200. Log why Cursor was missed, but do not surface it.
 		const message = error instanceof Error ? error.message : 'unknown error';
 		console.log(`cursor forward failed: ${redactUrl(message, webhookUrl)}`);
+		return { ok: false, detail: 'the request never completed' };
 	}
+}
+
+function runUuidFrom(reply: string): string | undefined {
+	try {
+		const payload: unknown = JSON.parse(reply);
+		if (isRecord(payload) && typeof payload.runUuid === 'string') {
+			return payload.runUuid;
+		}
+	} catch {
+		// Cursor replied with something other than JSON; the status line already says so.
+	}
+
+	return undefined;
 }
 
 // The destination URL is a secret env var; keep it out of the log even when a
 // fetch error or Cursor error page echoes it back.
 function redactUrl(text: string, webhookUrl: string): string {
 	return webhookUrl ? text.split(webhookUrl).join('<cursor-webhook-url>') : text;
+}
+
+function describeLinearEvent(rawBody: string): string {
+	try {
+		const payload: unknown = rawBody ? JSON.parse(rawBody) : null;
+		if (!isRecord(payload)) {
+			return 'type=? action=?';
+		}
+		const session = isRecord(payload.agentSession) ? payload.agentSession.id : undefined;
+		return `type=${String(payload.type)} action=${String(payload.action)} session=${String(session ?? '-')}`;
+	} catch {
+		return 'type=<unparseable>';
+	}
+}
+
+export function logPayload(env: { LOG_PAYLOADS?: string }, label: string, body: string): void {
+	const flag = env.LOG_PAYLOADS?.trim().toLowerCase();
+	if (flag === '0' || flag === 'false' || flag === 'off') {
+		return;
+	}
+	console.log(`${label}: ${body.slice(0, MAX_LOGGED_BODY)}`);
 }
 
 function agentSessionIdFrom(rawBody: string): string | null {
@@ -209,32 +287,39 @@ function agentSessionIdFrom(rawBody: string): string | null {
 	return null;
 }
 
-export async function ackAgentSession(env: LinearEnv, agentSessionId: string): Promise<void> {
+export function ackAgentSession(env: LinearEnv, agentSessionId: string): Promise<void> {
+	return emitActivity(env, agentSessionId, { type: 'thought', body: ACK_THOUGHT });
+}
+
+type ActivityContent = Record<string, unknown> & { type: string };
+
+async function emitActivity(env: LinearEnv, agentSessionId: string, content: ActivityContent): Promise<void> {
 	try {
 		let token = await appActorToken(env);
 		if (!token) {
-			console.log('agent ack skipped: LINEAR_CLIENT_ID/LINEAR_CLIENT_SECRET not configured');
+			console.log('agent activity skipped: LINEAR_CLIENT_ID/LINEAR_CLIENT_SECRET not configured');
 			return;
 		}
 
-		let response = await postThought(token, agentSessionId);
+		console.log(`agent activity -> session=${agentSessionId} content=${JSON.stringify(content)}`);
+		let response = await postActivity(token, agentSessionId, content);
 		if (response.status === 401) {
 			// App actor tokens have no refresh token; the documented recovery is a new one.
 			cachedAppToken = null;
 			token = await fetchAppActorToken(env);
 			if (token) {
-				response = await postThought(token, agentSessionId);
+				response = await postActivity(token, agentSessionId, content);
 			}
 		}
 
 		const reply = (await response.text()).slice(0, MAX_LOGGED_CURSOR_REPLY);
-		console.log(`agent ack: session=${agentSessionId} status=${response.status} reply=${reply}`);
+		console.log(`agent activity: session=${agentSessionId} type=${content.type} status=${response.status} reply=${reply}`);
 	} catch (error) {
-		console.log(`agent ack failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+		console.log(`agent activity failed: ${error instanceof Error ? error.message : 'unknown error'}`);
 	}
 }
 
-function postThought(token: string, agentSessionId: string): Promise<Response> {
+function postActivity(token: string, agentSessionId: string, content: ActivityContent): Promise<Response> {
 	return fetch(LINEAR_GRAPHQL_URL, {
 		method: 'POST',
 		headers: {
@@ -243,7 +328,7 @@ function postThought(token: string, agentSessionId: string): Promise<Response> {
 		},
 		body: JSON.stringify({
 			query: 'mutation AgentActivityCreate($input: AgentActivityCreateInput!) { agentActivityCreate(input: $input) { success } }',
-			variables: { input: { agentSessionId, content: { type: 'thought', body: ACK_THOUGHT } } },
+			variables: { input: { agentSessionId, content } },
 		}),
 	});
 }
