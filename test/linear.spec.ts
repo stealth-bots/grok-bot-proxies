@@ -1,7 +1,12 @@
 import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { handleRequest } from '../api/index';
-import { handleLinearRequest, verifyLinearSignature } from '../api/linear';
+import { waitUntil } from '@vercel/functions';
+import { POST, handleLinearRequest, verifyLinearSignature } from '../api/linear';
+import { handleSlackRequest } from '../api/slack';
+
+vi.mock('@vercel/functions', () => ({
+	waitUntil: vi.fn(),
+}));
 
 const SLACK_WEBHOOK_URL = 'https://api2.cursor.sh/automations/webhook/11111111-1111-1111-1111-111111111111';
 const SLACK_WEBHOOK_KEY = 'crsr_slack_test_key_not_real';
@@ -67,11 +72,11 @@ describe('Linear event forward', () => {
 		const captured: CapturedFetch[] = [];
 		mockCursorFetch(captured);
 
-		const response = await handleLinearRequest(signedLinearRequest(body), linearEnv);
+		const response = await handleLinearRequest(signedLinearRequest(body), linearEnv, (task) => void task);
 
 		expect(response.status).toBe(200);
 		expect(await response.text()).toBe('ok');
-		expect(captured).toHaveLength(1);
+		await expectForward(captured);
 		expect(captured[0].method).toBe('POST');
 		expect(captured[0].url).toBe(LINEAR_WEBHOOK_URL);
 		expect(captured[0].url).not.toContain(LINEAR_WEBHOOK_KEY);
@@ -85,10 +90,40 @@ describe('Linear event forward', () => {
 	it('still returns 200 when Cursor fails so Linear does not retry-storm', async () => {
 		mockCursorFetch([], { status: 500, body: 'nope' });
 
-		const response = await handleLinearRequest(signedLinearRequest(body), linearEnv);
+		const response = await handleLinearRequest(signedLinearRequest(body), linearEnv, (task) => void task);
 
 		expect(response.status).toBe(200);
 		expect(await response.text()).toBe('ok');
+	});
+
+	it('ACKs Linear before Cursor returns so a slow hop cannot 401 Linear retries', async () => {
+		const captured: CapturedFetch[] = [];
+		let releaseCursor!: (value: Response) => void;
+		const hung = new Promise<Response>((resolve) => {
+			releaseCursor = resolve;
+		});
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+				const request = new Request(input, init);
+				captured.push({
+					url: request.url,
+					method: request.method,
+					authorization: request.headers.get('authorization'),
+					contentType: request.headers.get('content-type'),
+					body: await request.text(),
+				});
+				return hung;
+			}),
+		);
+
+		const started = Date.now();
+		const response = await handleLinearRequest(signedLinearRequest(body), linearEnv);
+		expect(Date.now() - started).toBeLessThan(1000);
+		expect(response.status).toBe(200);
+		expect(await response.text()).toBe('ok');
+
+		releaseCursor(new Response('{"success":true}', { status: 200 }));
 	});
 
 	it('still returns 200 with no dest env so the Linear app can be created first', async () => {
@@ -166,11 +201,74 @@ describe('Linear request signing', () => {
 		const response = await handleLinearRequest(
 			signedLinearRequest(body, { 'linear-timestamp': String(now) }),
 			linearEnv,
+			(task) => void task,
 		);
 
 		expect(response.status).toBe(200);
-		expect(captured).toHaveLength(1);
+		await expectForward(captured);
 		expect(captured[0].url).toBe(LINEAR_WEBHOOK_URL);
+	});
+
+	it('accepts Linear retry timestamps inside the 6h delivery window', async () => {
+		const captured: CapturedFetch[] = [];
+		mockCursorFetch(captured);
+		const retryBody = JSON.stringify({
+			action: 'create',
+			type: 'Comment',
+			webhookTimestamp: now - (6 * 60 - 1) * 60 * 1000,
+		});
+
+		const response = await handleLinearRequest(signedLinearRequest(retryBody), linearEnv, (task) => void task);
+
+		expect(response.status).toBe(200);
+		await expectForward(captured);
+	});
+
+	it('accepts a 6h retry that arrives a few minutes late', async () => {
+		const captured: CapturedFetch[] = [];
+		mockCursorFetch(captured);
+		const retryBody = JSON.stringify({
+			action: 'create',
+			type: 'Comment',
+			webhookTimestamp: now - (6 * 60 + 5) * 60 * 1000,
+		});
+
+		const response = await handleLinearRequest(signedLinearRequest(retryBody), linearEnv, (task) => void task);
+
+		expect(response.status).toBe(200);
+		await expectForward(captured);
+	});
+
+	it('Vercel POST keeps the Cursor forward alive with waitUntil after ACKing Linear', async () => {
+		vi.stubEnv('LINEAR_CURSOR_WEBHOOK_URL', LINEAR_WEBHOOK_URL);
+		vi.stubEnv('LINEAR_CURSOR_WEBHOOK_KEY', LINEAR_WEBHOOK_KEY);
+		vi.stubEnv('LINEAR_WEBHOOK_SECRET', LINEAR_SIGNING_SECRET);
+
+		const captured: CapturedFetch[] = [];
+		mockCursorFetch(captured);
+		const waitUntilMock = vi.mocked(waitUntil);
+		waitUntilMock.mockClear();
+
+		const response = await POST(signedLinearRequest(body));
+
+		expect(response.status).toBe(200);
+		expect(waitUntilMock).toHaveBeenCalledTimes(1);
+		await expectForward(captured);
+	});
+
+	it('treats webhookTimestamp seconds as unix seconds so a unit mismatch cannot 401 Linear', async () => {
+		const captured: CapturedFetch[] = [];
+		mockCursorFetch(captured);
+		const secondsBody = JSON.stringify({
+			action: 'create',
+			type: 'Comment',
+			webhookTimestamp: Math.floor(now / 1000),
+		});
+
+		const response = await handleLinearRequest(signedLinearRequest(secondsBody), linearEnv, (task) => void task);
+
+		expect(response.status).toBe(200);
+		await expectForward(captured);
 	});
 
 	it('rejects a stale Linear timestamp when the signing secret is set', async () => {
@@ -178,11 +276,11 @@ describe('Linear request signing', () => {
 		const staleBody = JSON.stringify({
 			action: 'create',
 			type: 'Comment',
-			webhookTimestamp: now - 5 * 60 * 1000,
+			webhookTimestamp: now - 7 * 60 * 60 * 1000,
 		});
 
 		const response = await handleLinearRequest(
-			signedLinearRequest(staleBody, { 'linear-timestamp': String(now - 5 * 60 * 1000) }),
+			signedLinearRequest(staleBody, { 'linear-timestamp': String(now - 7 * 60 * 60 * 1000) }),
 			linearEnv,
 		);
 
@@ -195,7 +293,7 @@ describe('Linear request signing', () => {
 		const staleBody = JSON.stringify({
 			action: 'create',
 			type: 'Comment',
-			webhookTimestamp: now - 5 * 60 * 1000,
+			webhookTimestamp: now - 7 * 60 * 60 * 1000,
 		});
 
 		const response = await handleLinearRequest(
@@ -218,8 +316,8 @@ describe('Slack path stays on Slack env', () => {
 			event: { type: 'app_mention', text: 'hello' },
 		});
 
-		const response = await handleRequest(
-			new Request('https://proxy.example/', {
+		const response = await handleSlackRequest(
+			new Request('https://proxy.example/slack', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: slackBody,
@@ -234,6 +332,12 @@ describe('Slack path stays on Slack env', () => {
 		expect(captured[0].authorization).toBe(`Bearer ${SLACK_WEBHOOK_KEY}`);
 	});
 });
+
+async function expectForward(captured: CapturedFetch[]): Promise<void> {
+	await vi.waitFor(() => {
+		expect(captured).toHaveLength(1);
+	});
+}
 
 function mockCursorFetch(captured: CapturedFetch[] = [], reply: { status: number; body: string } = { status: 200, body: '{"success":true}' }) {
 	const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

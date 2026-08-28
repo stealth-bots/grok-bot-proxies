@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import vercelHandler from '../api/index';
-import { handleRequest, verifySlackSignature } from '../src/index';
+import vercelHandler from '../api/slack';
+import worker, { handleSlackRequest, verifySlackSignature } from '../src/index';
 
 const WEBHOOK_URL = 'https://api2.cursor.sh/automations/webhook/00000000-0000-0000-0000-000000000000';
 const WEBHOOK_KEY = 'crsr_test_key_not_real';
@@ -26,7 +26,7 @@ afterEach(() => {
 
 describe('GET health', () => {
 	it('returns a short health string and no secrets', async () => {
-		const response = await handleRequest(new Request('https://proxy.example/'), baseEnv);
+		const response = await handleSlackRequest(new Request('https://proxy.example/slack'), baseEnv);
 		expect(response.status).toBe(200);
 		const text = await response.text();
 		expect(text).toBe('ok');
@@ -39,8 +39,8 @@ describe('url_verification', () => {
 	it('echoes the challenge as text/plain and does not forward to Cursor', async () => {
 		const fetchMock = mockCursorFetch();
 		const challenge = '3eZbrw1aBm2rZgRNFdxV2595E9CY3gmdALWMmHkvFXO7tYXAYM8P';
-		const response = await handleRequest(
-			new Request('https://proxy.example/', {
+		const response = await handleSlackRequest(
+			new Request('https://proxy.example/slack', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
@@ -69,8 +69,8 @@ describe('event forward', () => {
 			event: { type: 'app_mention', text: 'hello' },
 		});
 
-		const response = await handleRequest(
-			new Request('https://proxy.example/', {
+		const response = await handleSlackRequest(
+			new Request('https://proxy.example/slack', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: slackBody,
@@ -93,8 +93,8 @@ describe('event forward', () => {
 	it('returns 502 when Cursor fails', async () => {
 		mockCursorFetch([], { status: 500, body: 'nope' });
 
-		const response = await handleRequest(
-			new Request('https://proxy.example/', {
+		const response = await handleSlackRequest(
+			new Request('https://proxy.example/slack', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({ type: 'event_callback' }),
@@ -114,8 +114,8 @@ describe('Slack request signing', () => {
 		const captured: CapturedFetch[] = [];
 		mockCursorFetch(captured);
 
-		const response = await handleRequest(
-			new Request('https://proxy.example/', {
+		const response = await handleSlackRequest(
+			new Request('https://proxy.example/slack', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body,
@@ -131,8 +131,8 @@ describe('Slack request signing', () => {
 		const fetchMock = mockCursorFetch();
 		const timestamp = String(Math.floor(Date.now() / 1000));
 
-		const response = await handleRequest(
-			new Request('https://proxy.example/', {
+		const response = await handleSlackRequest(
+			new Request('https://proxy.example/slack', {
 				method: 'POST',
 				headers: {
 					'content-type': 'application/json',
@@ -158,7 +158,7 @@ describe('Slack request signing', () => {
 
 		const slackBody = JSON.stringify({ type: 'event_callback', event: { type: 'message.im' } });
 		const response = await vercelHandler.fetch(
-			new Request('https://proxy.example/', {
+			new Request('https://proxy.example/slack', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: slackBody,
@@ -183,6 +183,60 @@ describe('Slack request signing', () => {
 			nowSeconds: Number(timestamp),
 		});
 		expect(expected).toBe(true);
+	});
+});
+
+describe('Slack lives on /slack', () => {
+	const slackEnv = {
+		...baseEnv,
+		LINEAR_CURSOR_WEBHOOK_URL: 'https://api2.cursor.sh/automations/webhook/22222222-2222-2222-2222-222222222222',
+		LINEAR_CURSOR_WEBHOOK_KEY: 'crsr_linear_test_key_not_real',
+		LINEAR_WEBHOOK_SECRET: 'test_linear_signing_secret_not_real',
+	};
+
+	it('forwards Slack events from /slack and /api/webhooks/slack', async () => {
+		const captured: CapturedFetch[] = [];
+		mockCursorFetch(captured);
+		const slackBody = JSON.stringify({ type: 'event_callback', event: { type: 'app_mention', text: 'hello' } });
+
+		for (const path of ['/slack', '/api/webhooks/slack', '/api/slack']) {
+			captured.length = 0;
+			const response = await worker.fetch(
+				new Request(`https://proxy.example${path}`, {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: slackBody,
+				}),
+				slackEnv,
+			);
+			expect(response.status).toBe(200);
+			expect(captured).toHaveLength(1);
+			expect(captured[0].url).toBe(WEBHOOK_URL);
+		}
+	});
+
+	it('returns health only on GET /', async () => {
+		const root = await worker.fetch(new Request('https://proxy.example/'), slackEnv);
+		expect(root.status).toBe(200);
+		expect(await root.text()).toBe('ok');
+
+		const unknown = await worker.fetch(new Request('https://proxy.example/unknown'), slackEnv);
+		expect(unknown.status).toBe(404);
+	});
+
+	it('does not treat POST / as Slack', async () => {
+		const fetchMock = mockCursorFetch();
+		const response = await worker.fetch(
+			new Request('https://proxy.example/', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ type: 'event_callback', event: { type: 'app_mention' } }),
+			}),
+			slackEnv,
+		);
+
+		expect(response.status).toBe(404);
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 });
 
