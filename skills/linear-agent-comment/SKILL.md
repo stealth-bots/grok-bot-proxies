@@ -23,6 +23,23 @@ Content-Type: application/json
 
 The comment is authored by Grok Bot, so it appears as the agent rather than as a person.
 
+## Pair this with the Linear MCP
+
+Use Linear's official MCP server for everything this proxy does not do: reading issues,
+comments, projects and documents, searching, and updating fields like status, assignee or
+labels. It exposes the full API; this proxy exposes only the writes an agent needs.
+
+The split matters because of **authorship**. The MCP authenticates as the _user_ who connected
+it, so anything it writes shows up as that person. This proxy authenticates as the _app_, so
+comments and activities show up as Grok Bot. So:
+
+- **Read and search with the MCP** — issue bodies, comment history, related issues, project
+  context, whatever you need to answer well.
+- **Write through the proxy** — so the reply is attributed to Grok Bot rather than to whoever
+  connected the MCP.
+
+Gathering context with the MCP and then replying through the proxy is the intended shape.
+
 ## When not to use this
 
 A comment **does not close an agent session**. If your run came from an `AgentSessionEvent`,
