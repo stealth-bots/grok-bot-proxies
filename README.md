@@ -52,6 +52,7 @@ A Vercel env change only applies to deployments created _after_ it — **redeplo
 | `LINEAR_CLIENT_ID`          | agent ack + activity relay          | Client ID of that same app.                                                         |
 | `LINEAR_CLIENT_SECRET`      | agent ack + activity relay (secret) | Rotating it revokes **every** app actor token.                                      |
 | `LINEAR_ACTIVITY_SECRET`    | `/linear/activity` (secret)         | Shared bearer Grok Bot sends. Unset ⇒ the route 503s.                               |
+| `LOG_PAYLOADS`              | logging                             | Full request bodies are logged by default. Set to `0` for metadata only.            |
 
 The handlers never log a bearer key, signing secret, `Authorization` header, or the Cursor
 destination URL.
