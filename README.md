@@ -25,6 +25,7 @@ not need both.
 | `POST /linear`          | `api/linear.ts`          | Verifies `Linear-Signature`, acks agent sessions, forwards `AgentSessionEvent` payloads to `LINEAR_CURSOR_WEBHOOK_URL`. Always **200** once verified.                                      |
 | `GET /linear/callback`  | `api/linear-callback.ts` | OAuth redirect landing for the app install. Holds no secrets, exchanges nothing.                                                                                                           |
 | `POST /linear/activity` | `api/linear-activity.ts` | Grok Bot posts its reply here; relayed to Linear as an agent activity.                                                                                                                     |
+| `POST /linear/comment`  | `api/linear-comment.ts`  | Grok Bot leaves an ordinary issue comment. Does **not** touch agent-session state.                                                                                                         |
 
 `/api/webhooks/slack` and `/api/webhooks/linear` are aliases of `/slack` and `/linear`.
 
@@ -131,6 +132,27 @@ Give the Cursor run these instructions:
 | `error`       | `body`                                   | **closed**, failed  |
 
 `prompt` is user-generated and rejected. Send exactly one closing activity.
+
+### Leaving ordinary comments
+
+`/linear/comment` posts a normal issue comment as the app, for when a reply should read like
+a teammate rather than agent-session output. Same shared bearer as `/linear/activity`.
+
+```
+POST /linear/comment
+Authorization: Bearer <LINEAR_ACTIVITY_SECRET>
+Content-Type: application/json
+
+{ "issueId": "<issue UUID>", "body": "Markdown supported.", "parentId": "<optional, to thread>" }
+```
+
+`issueId` is the issue **UUID**, not `GROK-1`; it is in every webhook payload at `data.issueId`
+(or `agentSession.issueId`). `parentId` threads the comment under an existing one.
+
+A comment does **not** close an agent session — only a `response`, `elicitation` or `error`
+activity does. If a session is open, comment _and_ close it, or the spinner stays. Comments by
+the app do come back as `Comment` webhooks, but those are no longer forwarded, so they cannot
+start a run.
 
 ## Slack setup
 

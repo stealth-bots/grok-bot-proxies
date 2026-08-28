@@ -2,6 +2,7 @@
 	"$schema": "https://openapi.vercel.sh/vercel.json",
 	"rewrites": [
 		{ "source": "/linear/activity", "destination": "/api/linear-activity" },
+		{ "source": "/linear/comment", "destination": "/api/linear-comment" },
 		{ "source": "/linear/callback", "destination": "/api/linear-callback" },
 		{ "source": "/linear", "destination": "/api/linear" },
 		{ "source": "/api/webhooks/linear", "destination": "/api/linear" },
