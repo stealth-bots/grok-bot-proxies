@@ -15,7 +15,7 @@ const LINEAR_TOKEN_URL = 'https://api.linear.app/oauth/token';
 // Changing this scope string revokes every existing app actor token for the app.
 const APP_TOKEN_SCOPES = 'read,write,app:assignable,app:mentionable';
 // Linear marks a session unresponsive without an activity within 10 seconds.
-const ACK_THOUGHT = 'On it — handing this to the Grok Bot run.';
+const ACK_THOUGHT = 'On it — handing this to the Grok Bot run. A reply usually takes 5–10 minutes.';
 // Retire a cached token early so it cannot expire mid-request.
 const TOKEN_EXPIRY_MARGIN_MS = 60 * 1000;
 
