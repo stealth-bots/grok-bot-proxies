@@ -22,7 +22,7 @@ not need both.
 | `GET,HEAD /slack`       | `api/slack.ts`           | `ok` health string. No secrets.                                                                                                                                                            |
 | `POST /slack`           | `api/slack.ts`           | `url_verification` ⇒ echoes `challenge` as `text/plain`, never forwarded. Anything else ⇒ forwards the **raw body** to `CURSOR_WEBHOOK_URL` with a Bearer header. **502** if Cursor fails. |
 | `GET,HEAD /linear`      | `api/linear.ts`          | `ok` health string.                                                                                                                                                                        |
-| `POST /linear`          | `api/linear.ts`          | Verifies `Linear-Signature`, acks agent sessions, forwards the raw body to `LINEAR_CURSOR_WEBHOOK_URL`. Always **200** once verified.                                                      |
+| `POST /linear`          | `api/linear.ts`          | Verifies `Linear-Signature`, acks agent sessions, forwards `AgentSessionEvent` payloads to `LINEAR_CURSOR_WEBHOOK_URL`. Always **200** once verified.                                      |
 | `GET /linear/callback`  | `api/linear-callback.ts` | OAuth redirect landing for the app install. Holds no secrets, exchanges nothing.                                                                                                           |
 | `POST /linear/activity` | `api/linear-activity.ts` | Grok Bot posts its reply here; relayed to Linear as an agent activity.                                                                                                                     |
 
@@ -159,8 +159,10 @@ Each of these cost real debugging time.
   function and logs a 401. Silence in the log means Linear never called.
 - **You cannot read webhook config via the API** — it returns "Invalid role: admin required",
   and `actor=app` integrations cannot request the `admin` scope at all.
-- **One mention fires several Linear events**, and each is forwarded, so one mention can start
-  several Cursor runs. Narrow the webhook's event categories if that is not what you want.
+- **One mention fires several Linear events** — `Comment`, `AppUserNotification` and
+  `AgentSessionEvent` all arrive. Only the last carries a session id, so only it is
+  forwarded. Forwarding the others started three runs per mention, two with nothing to
+  reply to, and made the agent's own comments trigger fresh runs.
 - **HTTP 200 from Linear's GraphQL API is not success.** A rejected activity shape returns 200
   with an `errors` array. Check for `"success":true`.
 - **App actor tokens last 30 days with no refresh token.** Re-fetch on a 401. Requesting a
