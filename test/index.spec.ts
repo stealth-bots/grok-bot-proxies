@@ -215,6 +215,15 @@ describe('Slack lives on /slack', () => {
 		}
 	});
 
+	it('returns health only on GET /', async () => {
+		const root = await worker.fetch(new Request('https://proxy.example/'), slackEnv);
+		expect(root.status).toBe(200);
+		expect(await root.text()).toBe('ok');
+
+		const unknown = await worker.fetch(new Request('https://proxy.example/unknown'), slackEnv);
+		expect(unknown.status).toBe(404);
+	});
+
 	it('does not treat POST / as Slack', async () => {
 		const fetchMock = mockCursorFetch();
 		const response = await worker.fetch(

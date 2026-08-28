@@ -12,6 +12,9 @@
 		"wrangler:deploy": "wrangler deploy",
 		"cf-typegen": "wrangler types"
 	},
+	"dependencies": {
+		"@vercel/functions": "^3.9.5"
+	},
 	"devDependencies": {
 		"@types/node": "^22.15.0",
 		"typescript": "^5.5.2",

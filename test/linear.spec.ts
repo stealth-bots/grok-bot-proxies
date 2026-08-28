@@ -1,7 +1,12 @@
 import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { handleLinearRequest, verifyLinearSignature } from '../api/linear';
+import { waitUntil } from '@vercel/functions';
+import { POST, handleLinearRequest, verifyLinearSignature } from '../api/linear';
 import { handleSlackRequest } from '../api/slack';
+
+vi.mock('@vercel/functions', () => ({
+	waitUntil: vi.fn(),
+}));
 
 const SLACK_WEBHOOK_URL = 'https://api2.cursor.sh/automations/webhook/11111111-1111-1111-1111-111111111111';
 const SLACK_WEBHOOK_KEY = 'crsr_slack_test_key_not_real';
@@ -210,12 +215,44 @@ describe('Linear request signing', () => {
 		const retryBody = JSON.stringify({
 			action: 'create',
 			type: 'Comment',
-			webhookTimestamp: now - 60 * 1000,
+			webhookTimestamp: now - (6 * 60 - 1) * 60 * 1000,
 		});
 
 		const response = await handleLinearRequest(signedLinearRequest(retryBody), linearEnv, (task) => void task);
 
 		expect(response.status).toBe(200);
+		await expectForward(captured);
+	});
+
+	it('accepts a 6h retry that arrives a few minutes late', async () => {
+		const captured: CapturedFetch[] = [];
+		mockCursorFetch(captured);
+		const retryBody = JSON.stringify({
+			action: 'create',
+			type: 'Comment',
+			webhookTimestamp: now - (6 * 60 + 5) * 60 * 1000,
+		});
+
+		const response = await handleLinearRequest(signedLinearRequest(retryBody), linearEnv, (task) => void task);
+
+		expect(response.status).toBe(200);
+		await expectForward(captured);
+	});
+
+	it('Vercel POST keeps the Cursor forward alive with waitUntil after ACKing Linear', async () => {
+		vi.stubEnv('LINEAR_CURSOR_WEBHOOK_URL', LINEAR_WEBHOOK_URL);
+		vi.stubEnv('LINEAR_CURSOR_WEBHOOK_KEY', LINEAR_WEBHOOK_KEY);
+		vi.stubEnv('LINEAR_WEBHOOK_SECRET', LINEAR_SIGNING_SECRET);
+
+		const captured: CapturedFetch[] = [];
+		mockCursorFetch(captured);
+		const waitUntilMock = vi.mocked(waitUntil);
+		waitUntilMock.mockClear();
+
+		const response = await POST(signedLinearRequest(body));
+
+		expect(response.status).toBe(200);
+		expect(waitUntilMock).toHaveBeenCalledTimes(1);
 		await expectForward(captured);
 	});
 
