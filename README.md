@@ -17,7 +17,7 @@ Repo: [stealth-bots/grok-bot-slack-events-proxy](https://github.com/stealth-bots
 | Any other Slack Events `POST` (`event_callback`, etc.) | Forwards the **raw body** as `POST` to `CURSOR_WEBHOOK_URL` with `Authorization: Bearer ${CURSOR_WEBHOOK_KEY}` and `Content-Type: application/json`. The key is never added to the URL. Returns HTTP 200 after a successful forward, or **502** if Cursor fails. |
 | Optional `SLACK_SIGNING_SECRET` | When set, verifies `X-Slack-Signature` / `X-Slack-Request-Timestamp` before forwarding. When unset, challenge + forward still work so you can finish Slack setup first. |
 
-The production URL itself is the Slack Request URL (`/` rewrites to the function in `api/index.ts`).
+The Slack Request URL is the production origin plus `/slack` (`/slack` rewrites to `api/slack.ts`). Linear is `/linear`.
 
 ## Environment
 
@@ -51,7 +51,7 @@ npx vercel --prod
 
 1. Turn **Socket Mode off**.
 2. Event Subscriptions → Enable Events.
-3. **Request URL:** paste the **Vercel URL**, not the Cursor webhook URL.
+3. **Request URL:** paste the **Vercel URL with `/slack`**, for example `https://grok-bot-slack-events-proxy.vercel.app/slack`. Not the origin root, and not the Cursor webhook URL.
 4. Subscribe to bot events:
    - `message.im`
    - `app_mention`

@@ -1,12 +1,23 @@
-import { handleRequest } from '../api/index';
 import { handleLinearRequest } from '../api/linear';
+import { handleSlackRequest } from '../api/slack';
 
-export { handleRequest, verifySlackSignature, type SlackEnv } from '../api/index';
 export { handleLinearRequest, verifyLinearSignature, type LinearEnv } from '../api/linear';
+export { handleRequest, handleSlackRequest, verifySlackSignature, type SlackEnv } from '../api/slack';
+
+const TEXT_PLAIN = 'text/plain; charset=utf-8';
+
+function pathnameOf(request: Request): string {
+	return new URL(request.url).pathname;
+}
 
 function isLinearPath(request: Request): boolean {
-	const { pathname } = new URL(request.url);
+	const pathname = pathnameOf(request);
 	return pathname === '/linear' || pathname === '/api/webhooks/linear' || pathname === '/api/linear';
+}
+
+function isSlackPath(request: Request): boolean {
+	const pathname = pathnameOf(request);
+	return pathname === '/slack' || pathname === '/api/webhooks/slack' || pathname === '/api/slack';
 }
 
 export default {
@@ -14,6 +25,17 @@ export default {
 		if (isLinearPath(request)) {
 			return handleLinearRequest(request, env, ctx ? (task) => ctx.waitUntil(task) : undefined);
 		}
-		return handleRequest(request, env);
+		if (isSlackPath(request)) {
+			return handleSlackRequest(request, env);
+		}
+
+		const method = request.method.toUpperCase();
+		if (method === 'GET' || method === 'HEAD') {
+			return new Response(method === 'HEAD' ? null : 'ok', {
+				status: 200,
+				headers: { 'content-type': TEXT_PLAIN },
+			});
+		}
+		return new Response('Not Found', { status: 404 });
 	},
 };

@@ -3,6 +3,8 @@
 	"rewrites": [
 		{ "source": "/linear", "destination": "/api/linear" },
 		{ "source": "/api/webhooks/linear", "destination": "/api/linear" },
-		{ "source": "/(.*)", "destination": "/api" }
+		{ "source": "/slack", "destination": "/api/slack" },
+		{ "source": "/api/webhooks/slack", "destination": "/api/slack" },
+		{ "source": "/", "destination": "/api" }
 	]
 }

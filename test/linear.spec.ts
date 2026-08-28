@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { handleRequest } from '../api/index';
 import { handleLinearRequest, verifyLinearSignature } from '../api/linear';
+import { handleSlackRequest } from '../api/slack';
 
 const SLACK_WEBHOOK_URL = 'https://api2.cursor.sh/automations/webhook/11111111-1111-1111-1111-111111111111';
 const SLACK_WEBHOOK_KEY = 'crsr_slack_test_key_not_real';
@@ -279,8 +279,8 @@ describe('Slack path stays on Slack env', () => {
 			event: { type: 'app_mention', text: 'hello' },
 		});
 
-		const response = await handleRequest(
-			new Request('https://proxy.example/', {
+		const response = await handleSlackRequest(
+			new Request('https://proxy.example/slack', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: slackBody,
