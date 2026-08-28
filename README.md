@@ -154,6 +154,18 @@ activity does. If a session is open, comment _and_ close it, or the spinner stay
 the app do come back as `Comment` webhooks, but those are no longer forwarded, so they cannot
 start a run.
 
+## Agent skills
+
+Two skills in `skills/`, for the Cursor run rather than for this repo:
+
+| Skill                   | Use                                                                         |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `linear-agent-activity` | Session output — progress, questions, the final answer, closing the session |
+| `linear-agent-comment`  | An ordinary issue comment that does not touch session state                 |
+
+They are split because the choice between them is the thing a run gets wrong: only an
+activity closes a session, so a comment-only reply leaves a spinner running next to it.
+
 ## Slack setup
 
 1. Socket Mode **off**.
