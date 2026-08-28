@@ -26,6 +26,33 @@ demand with the `client_credentials` grant (enable it on the Linear app), cached
 and re-fetched once on a 401 — app actor tokens last 30 days and have no refresh token. With
 `LINEAR_CLIENT_ID` / `LINEAR_CLIENT_SECRET` unset the ack is skipped and the forward still runs.
 
+`/linear/activity` (`api/linear-activity.ts`) is the outbound hop: the Cursor run POSTs its
+reply here and this relays it to Linear as an agent activity. The Linear app credentials stay
+in this project — the Cursor side never holds them. Requires `Authorization: Bearer
+${LINEAR_ACTIVITY_SECRET}`; without that env var the route fails closed with 503, because it
+can otherwise write into the workspace as the agent.
+
+```
+POST /linear/activity
+Authorization: Bearer <LINEAR_ACTIVITY_SECRET>
+Content-Type: application/json
+
+{ "agentSessionId": "<uuid>", "type": "response", "body": "Markdown supported." }
+```
+
+`type` is one of `thought`, `action`, `elicitation`, `response`, `error` — `prompt` is
+user-generated and rejected. `action` takes `action` + `parameter` and an optional `result`
+instead of `body`; the rest take `body`. **`response`, `elicitation` and `error` end the
+session**; `thought` and `action` leave it working.
+
+Replies are `{ok, linearStatus, linear}`. `ok` is not the HTTP status: Linear answers 200
+with an `errors` array on a rejected shape, so the route checks the payload and returns 502
+when the mutation did not succeed.
+
+The `agentSessionId` comes from the webhook body Cursor already receives, at
+`agentSession.id`. Only `AgentSessionEvent` payloads carry one. It is also logged on every
+ack as `agent ack: session=<uuid> …`.
+
 `/linear/callback` (`api/linear-callback.ts`) is the OAuth redirect target for the Linear app install. Linear requires a
 publicly accessible HTTPS, non-localhost redirect URI, so register
 `https://grok-bot-proxies.alt-x.systems/linear/callback` on the app rather than a localhost URL. The route only reports
@@ -44,6 +71,7 @@ Set these in the Vercel project (Settings → Environment Variables). **Do not c
 | `LINEAR_WEBHOOK_SECRET` | yes for `/linear` (secret) | Signing secret of the **installed** Linear app. |
 | `LINEAR_CLIENT_ID` | for the agent ack | Client ID of the same Linear app. |
 | `LINEAR_CLIENT_SECRET` | for the agent ack (secret) | Client secret. Rotating it revokes every app actor token. |
+| `LINEAR_ACTIVITY_SECRET` | for `/linear/activity` (secret) | Shared bearer the Cursor run sends. Unset ⇒ the route 503s. |
 
 The handler never logs the bearer key, signing secret, or `Authorization` header.
 

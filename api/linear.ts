@@ -228,7 +228,7 @@ export async function ackAgentSession(env: LinearEnv, agentSessionId: string): P
 		}
 
 		const reply = (await response.text()).slice(0, MAX_LOGGED_CURSOR_REPLY);
-		console.log(`agent ack: status=${response.status} reply=${reply}`);
+		console.log(`agent ack: session=${agentSessionId} status=${response.status} reply=${reply}`);
 	} catch (error) {
 		console.log(`agent ack failed: ${error instanceof Error ? error.message : 'unknown error'}`);
 	}
