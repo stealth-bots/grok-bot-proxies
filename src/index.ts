@@ -1,7 +1,7 @@
+import { handleLinearRequest } from '../api/linear';
 import { handleSlackRequest } from '../api/slack';
-import { handleLinearRequest } from './linear';
 
-export { handleLinearRequest, verifyLinearSignature, type LinearEnv } from './linear';
+export { handleLinearRequest, verifyLinearSignature, type LinearEnv } from '../api/linear';
 export { handleRequest, handleSlackRequest, verifySlackSignature, type SlackEnv } from '../api/slack';
 
 const TEXT_PLAIN = 'text/plain; charset=utf-8';
