@@ -6,6 +6,18 @@ Slack POSTs JSON to a Request URL and cannot send an `Authorization` header, whi
 webhooks require one and reject keys in the URL. Slack also requires a `url_verification`
 challenge echo, which a Cursor webhook will never produce.
 
+```
+                     ┌──────────────────────────────────────────┐
+  mention/DM ──────► │  POST /slack                             │
+                     │    verify signature (when configured)    │
+                     │    echo url_verification challenge       │
+                     │    forward raw payload ─────────────────►│──► Cursor run
+                     └──────────────────────────────────────────┘                │
+                                                                                  │
+       Slack  ◄─────── chat.postMessage, using the run's OWN token ───────────────┘
+                       (no proxy route — see Replying, below)
+```
+
 ## Routes
 
 | Route             | Handler        | Behaviour                                                                                                                                                                                  |

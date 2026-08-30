@@ -10,6 +10,21 @@ response. Each service gets a hop that speaks its dialect on one side and Cursor
 
 Production: `https://grok-bot-proxies.alt-x.systems` · Deployed on Vercel (`main` → production)
 
+```
+   platform                    this proxy                       Cursor
+  ──────────                  ────────────                     ────────
+   webhook  ─────────────────► verify signature
+                               acknowledge, if the platform
+                                 demands one on a deadline
+                               forward the raw payload ───────► run starts
+                                                                    │
+   platform ◄───────────────── write back as the app ◄──────────────┘
+     UI                        (where an outbound route exists)
+```
+
+Inbound is the same everywhere. Outbound is where services differ: Linear has relay routes so
+runs hold no credentials, Slack does not yet.
+
 ## Services
 
 | Service    | Inbound        | Outbound                                        | Guide                            |

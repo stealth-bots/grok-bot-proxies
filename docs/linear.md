@@ -8,6 +8,39 @@ seconds, requires an _activity_ within 10, and expects the real reply to arrive 
 its GraphQL API. A webhook-triggered runner can satisfy none of that alone: it has no Linear
 token, and by the time it finishes the request is long closed.
 
+```
+                     ┌──────────────────────────────────────────┐
+   @mention  ──────► │  POST /linear                            │
+                     │    verify Linear-Signature               │
+                     │    post `thought` within 10s ───────────►│──► Linear API
+                     │    forward AgentSessionEvent ───────────►│──► Cursor run
+                     │    post `action` naming the run ────────►│──► Linear API
+                     └──────────────────────────────────────────┘
+                     ┌──────────────────────────────────────────┐
+  Cursor run ──────► │  POST /linear/activity                   │
+                     │    verify shared bearer                  │
+                     │    mint app actor token                  │
+                     │    agentActivityCreate ─────────────────►│──► Linear API
+                     └──────────────────────────────────────────┘
+                     ┌──────────────────────────────────────────┐
+  Cursor run ──────► │  POST /linear/comment                    │
+                     │    verify shared bearer                  │
+                     │    mint app actor token                  │
+                     │    commentCreate ───────────────────────►│──► Linear API
+                     └──────────────────────────────────────────┘
+```
+
+## Why the ack exists
+
+Linear marks an agent session unresponsive if no activity arrives **within 10 seconds**. A real
+run takes minutes — often five to ten, most of it Cursor provisioning a workspace. Without
+something answering immediately, every mention looks broken.
+
+So the proxy posts a `thought` the moment a webhook lands, then an `action` naming the run once
+Cursor accepts it, so the session shows progress while the work happens. If Cursor refuses the
+handoff it posts an `error` instead, which **closes** the session — a session that visibly
+failed beats one spinning forever on a run that never started.
+
 ## Routes
 
 | Route                   | Handler                  | Behaviour                                                                                                                                          |
