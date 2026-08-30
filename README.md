@@ -91,3 +91,7 @@ docs/     per-service guides and shared operations
 skills/   specs for the agent run, one per service
 test/     vitest, one spec per handler
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
