@@ -104,6 +104,13 @@ grant type"` means step 1's toggle is off.
 
 ## Replying into a session
 
+<img src="img/linear-agent-session.jpeg" alt="A Linear agent session: a mention, the agent's replies, and a stop request" width="560">
+
+Each grey **Worked for N seconds** row is a collapsed group of activities — the `thought` and
+`action` this proxy posts. The replies beneath are `response` activities sent by the run
+through `/linear/activity`. A follow-up in the same session arrives as a `prompted` webhook
+rather than a new session, which is how the conversation continues.
+
 `POST /linear` writes two activities by itself: a `thought` ack inside Linear's 10 second
 deadline, then — once Cursor answers — an `action` naming the run (`Sent to Grok Bot` and the
 `runUuid`), so the handoff is visible in the thread. If Cursor refuses the handoff it posts an

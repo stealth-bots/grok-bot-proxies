@@ -27,10 +27,10 @@ runs hold no credentials, Slack does not yet.
 
 ## What it looks like
 
-| Linear                                                                                                                 | Slack                                                                                                       |
-| ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| <img src="docs/img/linear-assign-delegate.jpeg" alt="Grok Bot listed as an Agent in Linear's Assign menu" width="330"> | <img src="docs/img/slack-dm.jpeg" alt="grok-bot in Slack, badged AGENT, answering in a thread" width="330"> |
-| Delegate an issue to **Grok Bot**, badged `Agent`                                                                      | DM or @mention it in Slack, badged `AGENT`                                                                  |
+| Assign it                                                                                                              | Talk to it                                                                                                                      | In Slack                                                                                                    |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| <img src="docs/img/linear-assign-delegate.jpeg" alt="Grok Bot listed as an Agent in Linear's Assign menu" width="240"> | <img src="docs/img/linear-agent-session.jpeg" alt="A Linear agent session, Grok Bot replying across several turns" width="240"> | <img src="docs/img/slack-dm.jpeg" alt="grok-bot in Slack, badged AGENT, answering in a thread" width="240"> |
+| Delegate an issue to **Grok Bot**, badged `Agent`                                                                      | It answers in the session, turn by turn                                                                                         | DM or @mention it, badged `AGENT`                                                                           |
 
 ## Services
 
