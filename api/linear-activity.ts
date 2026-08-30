@@ -107,7 +107,7 @@ export async function handleLinearActivityRequest(request: Request, env: LinearA
 		}
 	}
 
-	const reply = await response.text();
+	const reply = redactSecrets(await response.text());
 	console.log(
 		`agent activity: session=${content.agentSessionId} type=${content.content.type} status=${response.status} reply=${reply.slice(0, MAX_LOGGED_REPLY)}`,
 	);
@@ -240,12 +240,22 @@ function safeJson(text: string): unknown {
 	}
 }
 
+// Defence in depth: nothing should put a credential in a body, but if anything ever
+// does, it must not survive into the log.
+const SECRET_SHAPED =
+	/(lin_oauth_[A-Za-z0-9]+|lin_api_[A-Za-z0-9]+|crsr_[A-Za-z0-9_-]+|xox[abprs]-[A-Za-z0-9-]+|Bearer\s+[A-Za-z0-9._~+/-]+=*)/gi;
+
+function redactSecrets(text: string): string {
+	return text.replace(SECRET_SHAPED, '<redacted>');
+}
+
 function logPayload(env: LinearActivityEnv, label: string, body: string): void {
+	// Off unless asked for: bodies carry issue and comment text, and logs are retained.
 	const flag = env.LOG_PAYLOADS?.trim().toLowerCase();
-	if (flag === '0' || flag === 'false' || flag === 'off') {
+	if (flag !== '1' && flag !== 'true' && flag !== 'on') {
 		return;
 	}
-	console.log(`${label}: ${body.slice(0, MAX_LOGGED_BODY)}`);
+	console.log(`${label}: ${redactSecrets(body).slice(0, MAX_LOGGED_BODY)}`);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -99,7 +99,7 @@ export async function handleLinearCommentRequest(request: Request, env: LinearCo
 		}
 	}
 
-	const reply = await response.text();
+	const reply = redactSecrets(await response.text());
 	console.log(`comment: issue=${input.issueId} status=${response.status} reply=${reply.slice(0, MAX_LOGGED_REPLY)}`);
 
 	// Linear answers 200 with an `errors` array on a rejected input, so status alone is not success.
@@ -202,12 +202,22 @@ function bearerMatches(header: string | null, expected: string): boolean {
 	return match ? timingSafeEqual(match[1], expected) : false;
 }
 
+// Defence in depth: nothing should put a credential in a body, but if anything ever
+// does, it must not survive into the log.
+const SECRET_SHAPED =
+	/(lin_oauth_[A-Za-z0-9]+|lin_api_[A-Za-z0-9]+|crsr_[A-Za-z0-9_-]+|xox[abprs]-[A-Za-z0-9-]+|Bearer\s+[A-Za-z0-9._~+/-]+=*)/gi;
+
+function redactSecrets(text: string): string {
+	return text.replace(SECRET_SHAPED, '<redacted>');
+}
+
 function logPayload(env: LinearCommentEnv, label: string, body: string): void {
+	// Off unless asked for: bodies carry issue and comment text, and logs are retained.
 	const flag = env.LOG_PAYLOADS?.trim().toLowerCase();
-	if (flag === '0' || flag === 'false' || flag === 'off') {
+	if (flag !== '1' && flag !== 'true' && flag !== 'on') {
 		return;
 	}
-	console.log(`${label}: ${body.slice(0, MAX_LOGGED_BODY)}`);
+	console.log(`${label}: ${redactSecrets(body).slice(0, MAX_LOGGED_BODY)}`);
 }
 
 function json(payload: unknown, status: number): Response {

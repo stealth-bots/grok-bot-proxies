@@ -7,18 +7,18 @@ Shared across every service: environment, deploying, logging, local development,
 Set in the Vercel project (Settings → Environment Variables). **Never commit them.**
 A Vercel env change only applies to deployments created _after_ it — **redeploy**.
 
-| Name                        | Service                  | Notes                                                                                       |
-| --------------------------- | ------------------------ | ------------------------------------------------------------------------------------------- |
-| `CURSOR_WEBHOOK_URL`        | Slack                    | Shape only: `https://api2.cursor.sh/automations/webhook/<uuid>`                             |
-| `CURSOR_WEBHOOK_KEY`        | Slack (secret)           | `crsr_…` bearer. Never in the URL.                                                          |
-| `SLACK_SIGNING_SECRET`      | Slack (optional, secret) | When set, verifies signature + 5 min skew.                                                  |
-| `LINEAR_CURSOR_WEBHOOK_URL` | Linear                   | A **different** Cursor routine from Slack's.                                                |
-| `LINEAR_CURSOR_WEBHOOK_KEY` | Linear (secret)          | `crsr_…` bearer.                                                                            |
-| `LINEAR_WEBHOOK_SECRET`     | Linear (secret)          | Signing secret of the **installed** Linear app. Unset ⇒ `POST /linear` returns 503.         |
-| `LINEAR_CLIENT_ID`          | Linear                   | Client ID of that same app.                                                                 |
-| `LINEAR_CLIENT_SECRET`      | Linear (secret)          | Rotating it revokes **every** app actor token.                                              |
-| `LINEAR_ACTIVITY_SECRET`    | Linear (secret)          | Shared bearer Grok Bot sends to `/linear/activity` and `/linear/comment`. Unset ⇒ both 503. |
-| `LOG_PAYLOADS`              | all                      | Full request bodies are logged by default. Set to `0` for metadata only.                    |
+| Name                        | Service                  | Notes                                                                                               |
+| --------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------- |
+| `CURSOR_WEBHOOK_URL`        | Slack                    | Shape only: `https://api2.cursor.sh/automations/webhook/<uuid>`                                     |
+| `CURSOR_WEBHOOK_KEY`        | Slack (secret)           | `crsr_…` bearer. Never in the URL.                                                                  |
+| `SLACK_SIGNING_SECRET`      | Slack (optional, secret) | When set, verifies signature + 5 min skew.                                                          |
+| `LINEAR_CURSOR_WEBHOOK_URL` | Linear                   | A **different** Cursor routine from Slack's.                                                        |
+| `LINEAR_CURSOR_WEBHOOK_KEY` | Linear (secret)          | `crsr_…` bearer.                                                                                    |
+| `LINEAR_WEBHOOK_SECRET`     | Linear (secret)          | Signing secret of the **installed** Linear app. Unset ⇒ `POST /linear` returns 503.                 |
+| `LINEAR_CLIENT_ID`          | Linear                   | Client ID of that same app.                                                                         |
+| `LINEAR_CLIENT_SECRET`      | Linear (secret)          | Rotating it revokes **every** app actor token.                                                      |
+| `LINEAR_ACTIVITY_SECRET`    | Linear (secret)          | Shared bearer Grok Bot sends to `/linear/activity` and `/linear/comment`. Unset ⇒ both 503.         |
+| `LOG_PAYLOADS`              | all                      | Request bodies are **not** logged unless this is `1`. Token-shaped strings are redacted regardless. |
 
 The handlers never log a bearer key, signing secret, `Authorization` header, or a Cursor
 destination URL.
@@ -41,8 +41,10 @@ touch no credentials.
 
 ## Logging
 
-Every leg is logged. With `LOG_PAYLOADS` on (the default) full request bodies are included,
-capped at 4 KB.
+Every leg is logged. Request bodies are **not** included unless `LOG_PAYLOADS=1`, since they
+carry issue and comment text and logs are retained; when opted in they are capped at 4 KB.
+Anything token-shaped — `lin_oauth_…`, `crsr_…`, `xox…`, a `Bearer` header — is replaced with
+`<redacted>` in every log line, bodies and relayed replies alike.
 
 ```
 linear webhook: type=AgentSessionEvent action=created session=<uuid> bytes=…
@@ -53,8 +55,7 @@ activity request: session=<uuid> type=response
 activity rejected: 401 bad or missing bearer
 ```
 
-Turn payloads off once an integration is settled — issue and comment bodies otherwise sit in
-Vercel logs indefinitely.
+Turn payloads off again once an integration is settled.
 
 **Invocation logs are the decisive diagnostic.** A bad signature still _invokes_ the function
 and logs a 401, so silence in the log means the platform never called.

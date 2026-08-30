@@ -213,7 +213,7 @@ async function forwardToCursor(webhookUrl: string, webhookKey: string, rawBody: 
 			body: rawBody,
 		});
 
-		const reply = (await response.text()).slice(0, MAX_LOGGED_CURSOR_REPLY);
+		const reply = redactSecrets(await response.text()).slice(0, MAX_LOGGED_CURSOR_REPLY);
 		console.log(`cursor forward: status=${response.status} reply=${redactUrl(reply, webhookUrl)}`);
 		return { ok: response.ok, runUuid: runUuidFrom(reply), detail: `status ${response.status}` };
 	} catch (error) {
@@ -256,12 +256,22 @@ function describeLinearEvent(rawBody: string): string {
 	}
 }
 
+// Defence in depth: nothing should put a credential in a body, but if anything ever
+// does, it must not survive into the log.
+const SECRET_SHAPED =
+	/(lin_oauth_[A-Za-z0-9]+|lin_api_[A-Za-z0-9]+|crsr_[A-Za-z0-9_-]+|xox[abprs]-[A-Za-z0-9-]+|Bearer\s+[A-Za-z0-9._~+/-]+=*)/gi;
+
+function redactSecrets(text: string): string {
+	return text.replace(SECRET_SHAPED, '<redacted>');
+}
+
 export function logPayload(env: { LOG_PAYLOADS?: string }, label: string, body: string): void {
+	// Off unless asked for: bodies carry issue and comment text, and logs are retained.
 	const flag = env.LOG_PAYLOADS?.trim().toLowerCase();
-	if (flag === '0' || flag === 'false' || flag === 'off') {
+	if (flag !== '1' && flag !== 'true' && flag !== 'on') {
 		return;
 	}
-	console.log(`${label}: ${body.slice(0, MAX_LOGGED_BODY)}`);
+	console.log(`${label}: ${redactSecrets(body).slice(0, MAX_LOGGED_BODY)}`);
 }
 
 function agentSessionIdFrom(rawBody: string): string | null {
@@ -306,7 +316,7 @@ async function emitActivity(env: LinearEnv, agentSessionId: string, content: Act
 			}
 		}
 
-		const reply = (await response.text()).slice(0, MAX_LOGGED_CURSOR_REPLY);
+		const reply = redactSecrets(await response.text()).slice(0, MAX_LOGGED_CURSOR_REPLY);
 		console.log(`agent activity: session=${agentSessionId} type=${content.type} status=${response.status} reply=${reply}`);
 	} catch (error) {
 		console.log(`agent activity failed: ${error instanceof Error ? error.message : 'unknown error'}`);

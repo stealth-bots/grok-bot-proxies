@@ -138,9 +138,7 @@ export async function verifySlackSignature(input: {
 	}
 
 	const encoder = new TextEncoder();
-	const key = await crypto.subtle.importKey('raw', encoder.encode(signingSecret), { name: 'HMAC', hash: 'SHA-256' }, false, [
-		'sign',
-	]);
+	const key = await crypto.subtle.importKey('raw', encoder.encode(signingSecret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
 	const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(`v0:${timestamp}:${rawBody}`));
 	const expected = `v0=${toHex(mac)}`;
 	return timingSafeEqual(expected, signature);
