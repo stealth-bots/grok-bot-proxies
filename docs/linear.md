@@ -41,6 +41,11 @@ Cursor accepts it, so the session shows progress while the work happens. If Curs
 handoff it posts an `error` instead, which **closes** the session — a session that visibly
 failed beats one spinning forever on a run that never started.
 
+Once installed, the agent appears in the **Assign** menu as a delegate — the human stays the
+assignee and owner:
+
+<img src="img/linear-assign-delegate.jpeg" alt="Grok Bot listed as an Agent under the assignee in Linear's Assign menu" width="380">
+
 ## Routes
 
 | Route                   | Handler                  | Behaviour                                                                                                                                          |

@@ -18,6 +18,10 @@ challenge echo, which a Cursor webhook will never produce.
                        (no proxy route — see Replying, below)
 ```
 
+Grok Bot answers direct messages and @mentions, badged `AGENT`, replying in-thread:
+
+<img src="img/slack-dm.jpeg" alt="grok-bot in Slack, badged AGENT, answering a question in a thread" width="820">
+
 ## Routes
 
 | Route             | Handler        | Behaviour                                                                                                                                                                                  |

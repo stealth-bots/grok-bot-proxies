@@ -25,6 +25,13 @@ Production: `https://grok-bot-proxies.alt-x.systems` · Deployed on Vercel (`mai
 Inbound is the same everywhere. Outbound is where services differ: Linear has relay routes so
 runs hold no credentials, Slack does not yet.
 
+## What it looks like
+
+| Linear                                                                                                                 | Slack                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| <img src="docs/img/linear-assign-delegate.jpeg" alt="Grok Bot listed as an Agent in Linear's Assign menu" width="330"> | <img src="docs/img/slack-dm.jpeg" alt="grok-bot in Slack, badged AGENT, answering in a thread" width="330"> |
+| Delegate an issue to **Grok Bot**, badged `Agent`                                                                      | DM or @mention it in Slack, badged `AGENT`                                                                  |
+
 ## Services
 
 | Service    | Inbound        | Outbound                                        | Guide                            |
