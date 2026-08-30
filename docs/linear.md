@@ -148,6 +148,22 @@ A comment does **not** close an agent session. If one is open, comment _and_ clo
 spinner stays. Comments by the app return as `Comment` webhooks, but those are not forwarded,
 so they cannot start a run.
 
+### A third model this proxy does not use
+
+Agent sessions are not the only way to build a Linear agent. Linear's own
+[demo agent](https://github.com/linear/linear-agent-demo) skips them entirely: it subscribes to
+**Inbox notifications** (`issueCommentMention`, `issueAssignedToYou`) rather than Agent session
+events, and replies with `commentCreate`. Reading like an ordinary teammate is the whole point.
+
+That sidesteps the spinner problem by never creating a session — at the cost of the session UI,
+progress activities, and the `prompted` follow-up webhook that makes a conversation continue.
+
+Switching would be a change to the Linear app's webhook categories rather than to this code:
+untick **Agent session events**, keep **Inbox notifications**, and reply through
+`/linear/comment` instead of `/linear/activity`. Worth verifying first whether Linear still
+renders a session widget on mention once you stop subscribing — if it does, you get a permanent
+spinner and want the hybrid instead.
+
 ### Pair with the Linear MCP
 
 Read and search with Linear's official MCP server; write through this proxy. The MCP
