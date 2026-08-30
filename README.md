@@ -46,14 +46,14 @@ decisions worth making deliberately.
 
 ## All routes
 
-| Route                   | Handler                  | Service                    |
-| ----------------------- | ------------------------ | -------------------------- |
-| `GET /`                 | `api/index.ts`           | — health. `POST /` is 404. |
-| `GET,HEAD,POST /slack`  | `api/slack.ts`           | Slack                      |
-| `GET,HEAD,POST /linear` | `api/linear.ts`          | Linear                     |
-| `GET /linear/callback`  | `api/linear-callback.ts` | Linear                     |
-| `POST /linear/activity` | `api/linear-activity.ts` | Linear                     |
-| `POST /linear/comment`  | `api/linear-comment.ts`  | Linear                     |
+| Route                   | Handler                  | Service                          |
+| ----------------------- | ------------------------ | -------------------------------- |
+| `GET /`                 | `api/index.ts`           | — landing page. `POST /` is 404. |
+| `GET,HEAD,POST /slack`  | `api/slack.ts`           | Slack                            |
+| `GET,HEAD,POST /linear` | `api/linear.ts`          | Linear                           |
+| `GET /linear/callback`  | `api/linear-callback.ts` | Linear                           |
+| `POST /linear/activity` | `api/linear-activity.ts` | Linear                           |
+| `POST /linear/comment`  | `api/linear-comment.ts`  | Linear                           |
 
 `/api/webhooks/slack` and `/api/webhooks/linear` are aliases of `/slack` and `/linear`.
 
@@ -91,6 +91,11 @@ docs/     per-service guides and shared operations
 skills/   specs for the agent run, one per service
 test/     vitest, one spec per handler
 ```
+
+## Credits
+
+Built by [stealth factory](https://www.stealth-factory.co).
+Contributor: [@wiiiimm](https://x.com/wiiiimm).
 
 ## License
 

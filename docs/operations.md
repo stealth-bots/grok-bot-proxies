@@ -33,6 +33,12 @@ npx vercel --prod
 
 Remember that env changes need a redeploy to take effect.
 
+## Health checks
+
+`/` serves a landing page naming the project and linking its source — it is not a health
+endpoint. Point monitoring at `/linear` and `/slack`, which answer `ok` as plain text and
+touch no credentials.
+
 ## Logging
 
 Every leg is logged. With `LOG_PAYLOADS` on (the default) full request bodies are included,
@@ -74,12 +80,6 @@ Covers the Slack challenge echo and forward, Linear signature verification and r
 handling, the agent-session ack and its token refresh, session-only forwarding, the activity
 and comment relays and their auth, and the OAuth callback.
 
-## Optional: Cloudflare Worker
+---
 
-`src/index.ts` and `wrangler.toml` remain if you prefer Workers. Vercel is the maintained path.
-
-```bash
-npx wrangler secret put CURSOR_WEBHOOK_URL
-npx wrangler secret put CURSOR_WEBHOOK_KEY
-npx wrangler deploy
-```
+Built by [stealth factory](https://www.stealth-factory.co) · [@wiiiimm](https://x.com/wiiiimm)

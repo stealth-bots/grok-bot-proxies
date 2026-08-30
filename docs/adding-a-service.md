@@ -48,3 +48,7 @@ token — that is a gap, not a design.
 - Treat a platform's HTTP 200 with an `errors` body as failure; check the payload, not the
   status.
 - Cap logged bodies, and gate them behind `LOG_PAYLOADS`.
+
+---
+
+Built by [stealth factory](https://www.stealth-factory.co) · [@wiiiimm](https://x.com/wiiiimm)

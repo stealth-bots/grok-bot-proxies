@@ -16,5 +16,5 @@
 		"skipLibCheck": true
 	},
 	"exclude": ["test"],
-	"include": ["src/**/*.ts", "api/**/*.ts"]
+	"include": ["api/**/*.ts"]
 }

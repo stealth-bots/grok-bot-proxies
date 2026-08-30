@@ -1,15 +1,10 @@
 node_modules/
-.wrangler/
 .vercel/
 dist/
 coverage/
 *.tsbuildinfo
-worker-configuration.d.ts
 
 # Local secrets — never commit these
-.dev.vars
-.dev.vars.*
-!.dev.vars.example
 .env
 .env.*
 !.env.example

@@ -1,30 +1,49 @@
 const TEXT_PLAIN = 'text/plain; charset=utf-8';
 
-function health(method: string): Response {
-	return new Response(method === 'HEAD' ? null : 'ok', {
-		status: 200,
-		headers: { 'content-type': TEXT_PLAIN },
-	});
-}
+// Served at `/`. Health lives on `/linear` and `/slack`, which answer `ok` — point
+// monitoring at those, not here.
+const PAGE = `grok-bot proxies
+
+Public HTTPS hops between Slack, Linear and the Cursor webhooks that run grok-bot.
+
+Endpoints
+  /linear            Linear webhooks
+  /linear/activity   agent activities
+  /linear/comment    issue comments
+  /linear/callback   OAuth redirect
+  /slack             Slack events
+
+Every endpoint is authenticated. Nothing here accepts unsigned input, and no
+credential is ever echoed back or logged.
+
+Source        https://github.com/stealth-bots/grok-bot-proxies
+Built by      stealth factory   https://www.stealth-factory.co
+Contributor   @wiiiimm          https://x.com/wiiiimm
+
+MIT licensed.
+`;
 
 export function GET(): Response {
-	return health('GET');
+	return new Response(PAGE, { status: 200, headers: { 'content-type': TEXT_PLAIN } });
 }
 
 export function HEAD(): Response {
-	return health('HEAD');
+	return new Response(null, { status: 200, headers: { 'content-type': TEXT_PLAIN } });
 }
 
 export function POST(): Response {
-	return new Response('Not Found', { status: 404 });
+	return new Response('Not Found', { status: 404, headers: { 'content-type': TEXT_PLAIN } });
 }
 
 export default {
 	fetch(request: Request): Response {
 		const method = request.method.toUpperCase();
-		if (method === 'GET' || method === 'HEAD') {
-			return health(method);
+		if (method === 'GET') {
+			return GET();
 		}
-		return new Response('Not Found', { status: 404 });
+		if (method === 'HEAD') {
+			return HEAD();
+		}
+		return POST();
 	},
 };

@@ -1,6 +1,0 @@
-# Copy to .dev.vars for local `wrangler dev`. Never commit .dev.vars.
-# Shape only — replace with your own values.
-
-CURSOR_WEBHOOK_URL=https://api2.cursor.sh/automations/webhook/<uuid>
-CURSOR_WEBHOOK_KEY=crsr_...
-# SLACK_SIGNING_SECRET=

@@ -195,3 +195,7 @@ Each of these cost real debugging time.
   with an `errors` array. Check for `"success":true`.
 - **App actor tokens last 30 days with no refresh token.** Re-fetch on a 401. Requesting a token
   with a _different_ scope string revokes the existing ones.
+
+---
+
+Built by [stealth factory](https://www.stealth-factory.co) · [@wiiiimm](https://x.com/wiiiimm)

@@ -74,3 +74,7 @@ Adding `/slack/message`, shaped like `/linear/comment`, would close both gaps.
   answers immediately, so a retry usually means the proxy itself was unreachable. Treat a
   repeated `event.ts` as already handled.
 - **Use Slack `mrkdwn`, not Markdown**: `*bold*`, `_italic_`, `<https://url|label>`.
+
+---
+
+Built by [stealth factory](https://www.stealth-factory.co) · [@wiiiimm](https://x.com/wiiiimm)

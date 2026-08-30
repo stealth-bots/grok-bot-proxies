@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import vercelHandler from '../api/slack';
-import worker, { handleSlackRequest, verifySlackSignature } from '../src/index';
+import { handleSlackRequest, verifySlackSignature } from '../api/slack';
 
 const WEBHOOK_URL = 'https://api2.cursor.sh/automations/webhook/00000000-0000-0000-0000-000000000000';
 const WEBHOOK_KEY = 'crsr_test_key_not_real';
@@ -186,61 +186,10 @@ describe('Slack request signing', () => {
 	});
 });
 
-describe('Slack lives on /slack', () => {
-	const slackEnv = {
-		...baseEnv,
-		LINEAR_CURSOR_WEBHOOK_URL: 'https://api2.cursor.sh/automations/webhook/22222222-2222-2222-2222-222222222222',
-		LINEAR_CURSOR_WEBHOOK_KEY: 'crsr_linear_test_key_not_real',
-		LINEAR_WEBHOOK_SECRET: 'test_linear_signing_secret_not_real',
-	};
-
-	it('forwards Slack events from /slack and /api/webhooks/slack', async () => {
-		const captured: CapturedFetch[] = [];
-		mockCursorFetch(captured);
-		const slackBody = JSON.stringify({ type: 'event_callback', event: { type: 'app_mention', text: 'hello' } });
-
-		for (const path of ['/slack', '/api/webhooks/slack', '/api/slack']) {
-			captured.length = 0;
-			const response = await worker.fetch(
-				new Request(`https://proxy.example${path}`, {
-					method: 'POST',
-					headers: { 'content-type': 'application/json' },
-					body: slackBody,
-				}),
-				slackEnv,
-			);
-			expect(response.status).toBe(200);
-			expect(captured).toHaveLength(1);
-			expect(captured[0].url).toBe(WEBHOOK_URL);
-		}
-	});
-
-	it('returns health only on GET /', async () => {
-		const root = await worker.fetch(new Request('https://proxy.example/'), slackEnv);
-		expect(root.status).toBe(200);
-		expect(await root.text()).toBe('ok');
-
-		const unknown = await worker.fetch(new Request('https://proxy.example/unknown'), slackEnv);
-		expect(unknown.status).toBe(404);
-	});
-
-	it('does not treat POST / as Slack', async () => {
-		const fetchMock = mockCursorFetch();
-		const response = await worker.fetch(
-			new Request('https://proxy.example/', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ type: 'event_callback', event: { type: 'app_mention' } }),
-			}),
-			slackEnv,
-		);
-
-		expect(response.status).toBe(404);
-		expect(fetchMock).not.toHaveBeenCalled();
-	});
-});
-
-function mockCursorFetch(captured: CapturedFetch[] = [], reply: { status: number; body: string } = { status: 200, body: '{"success":true}' }) {
+function mockCursorFetch(
+	captured: CapturedFetch[] = [],
+	reply: { status: number; body: string } = { status: 200, body: '{"success":true}' },
+) {
 	const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
 		const request = new Request(input, init);
 		captured.push({

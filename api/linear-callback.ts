@@ -1,4 +1,5 @@
 const TEXT_PLAIN = 'text/plain; charset=utf-8';
+const SIGNOFF = '\n\n—\nstealth factory   https://www.stealth-factory.co';
 
 const IDLE_TEXT = [
 	'Linear OAuth callback.',
@@ -34,7 +35,8 @@ export function handleLinearCallbackRequest(request: Request): Response {
 	const error = params.get('error');
 	const code = params.get('code');
 
-	const body = error ? errorText(error, params.get('error_description')) : code ? successText(code) : IDLE_TEXT;
+	const page = error ? errorText(error, params.get('error_description')) : code ? successText(code) : IDLE_TEXT;
+	const body = page + SIGNOFF;
 
 	return new Response(method === 'HEAD' ? null : body, {
 		status: error ? 400 : 200,

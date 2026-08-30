@@ -8,10 +8,7 @@
 		"deploy": "npx vercel --prod",
 		"dev": "npx vercel dev --listen 43123",
 		"start": "npx vercel dev --listen 43123",
-		"test": "vitest run",
-		"wrangler:dev": "wrangler dev --ip 127.0.0.1 --port 43123",
-		"wrangler:deploy": "wrangler deploy",
-		"cf-typegen": "wrangler types"
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@vercel/functions": "^3.9.5"
@@ -19,7 +16,6 @@
 	"devDependencies": {
 		"@types/node": "^22.15.0",
 		"typescript": "^5.5.2",
-		"vitest": "~4.1.0",
-		"wrangler": "^4"
+		"vitest": "~4.1.0"
 	}
 }
